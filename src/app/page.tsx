@@ -140,7 +140,7 @@ export default function Home() {
             LATEST NEWS<br /><span style={{ color: PINK }}>AUTO-POSTED</span>
           </h1>
           <p style={{ fontSize: 15, color: "rgba(255,255,255,0.6)", lineHeight: 1.6, marginBottom: 32, maxWidth: 480 }}>
-            Scrapes PPP TV Kenya every 10 minutes. Gemini AI generates clickbait titles. Posts to Instagram &amp; Facebook automatically.
+            Scrapes PPP TV Kenya every 30 minutes. Gemini AI generates clickbait titles. Posts to Instagram &amp; Facebook automatically.
           </p>
           <button
             onClick={fetchArticles}
@@ -173,7 +173,7 @@ export default function Home() {
           {[
             { label: "Source", value: "ppptv-v2.vercel.app" },
             { label: "Format", value: "1080 × 1350  4:5" },
-            { label: "Cron", value: "Every 10 minutes" },
+            { label: "Cron", value: "Every 30 minutes" },
             { label: "Social", value: tokensConfigured ? "✓ Tokens configured" : "Awaiting tokens" },
             { label: "AI", value: "Gemini 1.5 Flash" },
             { label: "Posts Today", value: postLog.filter(p => new Date(p.postedAt).toDateString() === new Date().toDateString()).length.toString() },
@@ -195,7 +195,7 @@ export default function Home() {
             <div style={{ color: MUTED, fontSize: 13 }}>Loading log…</div>
           ) : postLog.length === 0 ? (
             <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 8, padding: "24px", color: MUTED, fontSize: 13 }}>
-              No posts yet. The cron runs every 10 minutes automatically.
+              No posts yet. The cron runs every 30 minutes automatically.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -306,7 +306,7 @@ export default function Home() {
             {[
               { done: true, label: "Next.js app deployed on Vercel" },
               { done: true, label: "RSS scraper + Bebas Neue image generator (4:5)" },
-              { done: true, label: "Cloudflare Worker cron every 10 minutes" },
+              { done: true, label: "Cloudflare Worker cron every 30 minutes" },
               { done: true, label: "Cloudflare KV deduplication + post log" },
               { done: true, label: "INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_ACCOUNT_ID configured" },
               { done: true, label: "FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID configured" },
