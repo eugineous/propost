@@ -4,9 +4,9 @@ import { filterUnseen, markSeen } from "@/lib/dedup";
 import { formatPost } from "@/lib/formatter";
 import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
-import { SchedulerResponse } from "@/lib/types";
+import { Article, SchedulerResponse } from "@/lib/types";
 
-export const maxDuration = 300; // 5 min timeout for Vercel
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization");
@@ -16,20 +16,35 @@ export async function POST(req: NextRequest) {
 
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
 
-  let articles;
+  // The Cloudflare Worker can send a single pre-filtered article,
+  // or omit it to let Vercel scrape + dedup itself (fallback mode)
+  let body: { article?: Article } = {};
   try {
-    articles = await fetchArticles();
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: `Scraper failed: ${err.message}` },
-      { status: 500 }
-    );
+    body = await req.json();
+  } catch {
+    // no body — run full scrape mode
   }
 
-  const newArticles = await filterUnseen(articles);
-  response.skipped = articles.length - newArticles.length;
+  let articles: Article[];
 
-  for (const article of newArticles) {
+  if (body.article) {
+    // Worker sent a single pre-deduped article
+    articles = [body.article];
+  } else {
+    // Fallback: scrape + dedup on Vercel side
+    try {
+      const all = await fetchArticles();
+      articles = await filterUnseen(all);
+      response.skipped = all.length - articles.length;
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: `Scraper failed: ${err.message}` },
+        { status: 500 }
+      );
+    }
+  }
+
+  for (const article of articles) {
     try {
       const igPost = formatPost(article, "instagram");
       const fbPost = formatPost(article, "facebook");

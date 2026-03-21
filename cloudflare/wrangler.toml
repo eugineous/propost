@@ -2,11 +2,17 @@ name = "ppptv-auto-poster"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Cron schedule — runs every 30 minutes
-# Adjust as needed: "0 * * * *" = every hour, "*/15 * * * *" = every 15 min
+# Cron: every 30 minutes
 [triggers]
 crons = ["*/30 * * * *"]
 
-# Secrets (set via: wrangler secret put AUTOMATE_SECRET)
-# VERCEL_APP_URL
-# AUTOMATE_SECRET
+# Cloudflare KV namespace for deduplication
+# Create with: wrangler kv:namespace create SEEN_ARTICLES
+# Then paste the returned id below
+[[kv_namespaces]]
+binding = "SEEN_ARTICLES"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets (set via wrangler secret put):
+#   VERCEL_APP_URL   = https://your-app.vercel.app
+#   AUTOMATE_SECRET  = your_secret_token
