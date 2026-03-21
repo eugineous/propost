@@ -44,13 +44,13 @@ function isAccentWord(word: string): boolean {
 function buildHeadlineSpans(title: string) {
   const upper = title.toUpperCase();
   const words = upper.split(/\s+/);
+  // satori only supports display: "flex" — no "inline". Use flex spans with marginRight for spacing.
   return words.map((word, i) => ({
     type: "span" as const,
     props: {
       style: {
         color: isAccentWord(word) ? ACCENT : WHITE,
-        marginRight: i < words.length - 1 ? "0.18em" : "0",
-        display: "inline",
+        marginRight: i < words.length - 1 ? 14 : 0,
       },
       children: word,
     },

@@ -49,25 +49,13 @@ export default function Home() {
     }
   }
 
-  async function selectArticle(article: DryRunArticle) {
+  function selectArticle(article: DryRunArticle) {
     setSelectedArticle(article);
-    setPreviewSrc(null);
     setPreviewLoading(true);
-    try {
-      const url = `/api/preview-image?title=${encodeURIComponent(article.title)}&category=${encodeURIComponent(article.category)}&t=${Date.now()}`;
-      // Pre-load the image
-      await new Promise<void>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Image load failed"));
-        img.src = url;
-      });
-      setPreviewSrc(url);
-    } catch {
-      setPreviewSrc(null);
-    } finally {
-      setPreviewLoading(false);
-    }
+    setPreviewSrc(null);
+    // Set src directly — onLoad/onError on the <img> tag handles the rest
+    const url = `/api/preview-image?title=${encodeURIComponent(article.title)}&category=${encodeURIComponent(article.category)}&t=${Date.now()}`;
+    setPreviewSrc(url);
   }
 
   return (
@@ -194,7 +182,7 @@ export default function Home() {
               }}
               onClick={() => previewSrc && setLightbox(true)}
             >
-              {previewLoading && (
+              {previewLoading && !previewSrc && (
                 <div style={{ color: "#444", fontSize: 14 }}>Generating image…</div>
               )}
               {!previewLoading && !previewSrc && !selectedArticle && (
@@ -203,25 +191,32 @@ export default function Home() {
               {!previewLoading && !previewSrc && selectedArticle && (
                 <div style={{ color: "#f87171", fontSize: 13 }}>Image generation failed</div>
               )}
-              {previewSrc && !previewLoading && (
+              {previewSrc && (
                 <>
+                  {previewLoading && (
+                    <div style={{ position: "absolute", color: "#444", fontSize: 14 }}>Generating image…</div>
+                  )}
                   <img
                     src={previewSrc}
                     alt="Generated post"
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    onLoad={() => setPreviewLoading(false)}
+                    onError={() => { setPreviewLoading(false); setPreviewSrc(null); }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: previewLoading ? "none" : "block" }}
                   />
-                  <div style={{
-                    position: "absolute",
-                    bottom: 10,
-                    right: 10,
-                    background: "rgba(0,0,0,0.7)",
-                    color: "#fff",
-                    fontSize: 11,
-                    padding: "4px 8px",
-                    borderRadius: 4,
-                  }}>
-                    Click to enlarge
-                  </div>
+                  {!previewLoading && (
+                    <div style={{
+                      position: "absolute",
+                      bottom: 10,
+                      right: 10,
+                      background: "rgba(0,0,0,0.7)",
+                      color: "#fff",
+                      fontSize: 11,
+                      padding: "4px 8px",
+                      borderRadius: 4,
+                    }}>
+                      Click to enlarge
+                    </div>
+                  )}
                 </>
               )}
             </div>
