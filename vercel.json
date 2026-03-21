@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "src/app/api/automate/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/preview-image/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}
