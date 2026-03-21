@@ -4,7 +4,7 @@ compatibility_date = "2024-01-01"
 
 # Cron: every 30 minutes
 [triggers]
-crons = ["*/30 * * * *"]
+crons = ["*/10 * * * *"]
 
 # Cloudflare KV namespace for deduplication
 # Create with: wrangler kv:namespace create SEEN_ARTICLES

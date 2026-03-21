@@ -1,41 +1,57 @@
 # PPP TV Auto Poster
 
-Automated news-to-social pipeline for PPP TV Kenya. Scrapes the PPP TV RSS feed, generates branded 1080×1080 images, and posts to Instagram and Facebook — fully automated via a Cloudflare Worker cron.
+Automated news-to-social pipeline for PPP TV Kenya. Scrapes the PPP TV website directly, generates branded 1080×1350 (4:5) portrait images in the style of Rap TV / WorldStar, and posts to Instagram and Facebook — fully automated via a Cloudflare Worker cron every 10 minutes.
 
 ---
 
 ## How it works
 
-1. **Cloudflare Worker** fires every 30 minutes
-2. Calls the Vercel `/api/automate` endpoint (authenticated with `AUTOMATE_SECRET`)
-3. Vercel scrapes `ppptv-v2.vercel.app/api/rss` for new articles
-4. Deduplication via **Cloudflare KV** — already-posted articles are skipped
-5. For each new article: generates a branded image + formats captions
+1. **Cloudflare Worker** fires every 10 minutes
+2. Scrapes `ppptv-v2.vercel.app` directly (no RSS) — gets the ONE latest article
+3. Checks **Cloudflare KV** — if already posted, skips
+4. Calls Vercel `/api/automate` (authenticated with `AUTOMATE_SECRET`)
+5. Vercel generates a branded 4:5 image + formats captions
 6. Posts to **Instagram** and **Facebook** via Graph API
+
+---
+
+## Image template design
+
+Inspired by Rap TV, WorldStar, and Polymarket's social graphics:
+
+- **4:5 ratio** — 1080×1350px (optimal for Instagram feed + Facebook)
+- **Full-bleed photo** — article thumbnail fills the entire frame, cropped to top (faces)
+- **Gradient overlay** — transparent at top, fades to solid black at ~85% down. Photo bleeds through the transition naturally
+- **Category pill** — white background, black bold text, rounded corners, sits at the gradient start
+- **Headline** — Bebas Neue (the exact font used by Rap TV). All caps, ultra-tight leading (0.92). Key nouns/names in PPP TV red-orange (`#E8401C`), connectors in white
+- **Subtitle** — small italic, 72% white opacity
+- **PPP TV logo** — top-left, crown + "PPP" white + "TV" gold + "KENYA" tagline, semi-transparent dark backing
+
+### Brand colors (from PPP TV logo)
+
+| Color      | Hex       | Usage                          |
+| ---------- | --------- | ------------------------------ |
+| Red-orange | `#E8401C` | Accent words in headline       |
+| Gold       | `#F5A623` | "TV" in logo, crown icon       |
+| White      | `#FFFFFF` | Connector words, logo text     |
+| Black      | `#000000` | Background, category pill text |
+
+### Font
+
+**Bebas Neue** — the industry-standard condensed display font for news graphics. All-caps, zero descenders, ultra-tight tracking. Same font used by Rap TV, WorldStarHipHop, and major news stations globally.
 
 ---
 
 ## Stack
 
-| Layer            | Tech                                  |
-| ---------------- | ------------------------------------- |
-| App / API        | Next.js 14 on Vercel                  |
-| Cron trigger     | Cloudflare Worker                     |
-| Deduplication    | Cloudflare KV (`SEEN_ARTICLES`)       |
-| Image generation | Satori + Sharp (1080×1080 JPEG)       |
-| Social posting   | Meta Graph API (Instagram + Facebook) |
-
----
-
-## Image template
-
-- 1080×1080 JPEG
-- Full-bleed article thumbnail as background
-- Gradient fade to solid black at the bottom
-- White category pill (e.g. `CELEBRITY`, `TV & FILM`)
-- Two-tone headline — orange for names/nouns, white for connectors
-- Italic subtitle from article description
-- PPP TV Kenya logo top-left
+| Layer            | Tech                                          |
+| ---------------- | --------------------------------------------- |
+| App / API        | Next.js 14 on Vercel                          |
+| Cron trigger     | Cloudflare Worker (every 10 min)              |
+| Deduplication    | Cloudflare KV (`SEEN_ARTICLES`)               |
+| Image generation | Satori + Sharp (1080×1350 JPEG)               |
+| Social posting   | Meta Graph API (Instagram + Facebook)         |
+| Scraping         | Direct HTML scrape (no RSS, no external deps) |
 
 ---
 
@@ -44,20 +60,20 @@ Automated news-to-social pipeline for PPP TV Kenya. Scrapes the PPP TV RSS feed,
 ```
 src/
   app/
-    page.tsx                  # Dashboard UI
+    page.tsx                  # Dashboard UI with live preview
     api/
       automate/route.ts       # Main POST endpoint (called by CF Worker)
       dry-run/route.ts        # Test scraper + image gen without posting
       preview-image/route.ts  # Preview image template in browser
   lib/
-    scraper.ts                # RSS parser (no external deps)
-    image-gen.ts              # Satori + Sharp image generator
+    scraper.ts                # Direct HTML scraper (ppptv-v2.vercel.app)
+    image-gen.ts              # Satori + Sharp — 4:5 Bebas Neue template
     formatter.ts              # Caption formatter with hashtags
     publisher.ts              # Instagram + Facebook Graph API
     dedup.ts                  # Cloudflare KV deduplication
     types.ts                  # Shared TypeScript interfaces
 cloudflare/
-  worker.js                   # Cloudflare Worker with cron
+  worker.js                   # Cloudflare Worker with 10-min cron
   wrangler.toml               # Worker config + KV binding
 ```
 
@@ -65,7 +81,7 @@ cloudflare/
 
 ## Environment variables
 
-Set these in Vercel project settings:
+Set in Vercel project settings:
 
 | Variable                 | Description                                |
 | ------------------------ | ------------------------------------------ |
@@ -79,34 +95,36 @@ Set these in Vercel project settings:
 
 ## Cloudflare Worker secrets
 
-Set via `wrangler secret put`:
-
-| Secret            | Value                                  |
-| ----------------- | -------------------------------------- |
-| `VERCEL_APP_URL`  | `https://auto-news-station.vercel.app` |
-| `AUTOMATE_SECRET` | Same value as Vercel env var           |
+```bash
+wrangler secret put VERCEL_APP_URL   # https://auto-news-station.vercel.app
+wrangler secret put AUTOMATE_SECRET  # same as Vercel env var
+```
 
 ---
 
 ## Testing without social tokens
 
-**Preview image template:**
+Preview the image template in browser:
 
 ```
 GET /api/preview-image
 GET /api/preview-image?title=YOUR+HEADLINE&category=CELEBRITY
+GET /api/preview-image?title=HEADLINE&category=NEWS&imageUrl=https://...
 ```
 
-**Dry run (scrape + image gen, no posting):**
+Dry run (scrape + image gen, no posting):
 
 ```
 GET /api/dry-run
 ```
 
-Both endpoints are safe to call without any social API tokens configured.
-
 ---
 
 ## Dashboard
 
-Live at `https://auto-news-station.vercel.app` — shows live article previews with generated images, caption lengths, and setup checklist.
+Live at `https://auto-news-station.vercel.app`
+
+- Click "Fetch Live Articles + Preview Images" to pull real articles
+- Click any article card to see the generated 4:5 image
+- Click the image to open fullscreen lightbox
+- Shows caption character counts for Instagram and Facebook

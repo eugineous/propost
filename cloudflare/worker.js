@@ -1,56 +1,44 @@
 /**
  * PPP TV Auto Poster — Cloudflare Worker
  *
- * Responsibilities:
- *  1. Cron: fires every 30 minutes
- *  2. Fetches RSS from ppptv-v2.vercel.app/api/rss
- *  3. Deduplicates using Cloudflare KV (SEEN_ARTICLES binding)
- *  4. For each new article, calls Vercel /api/automate with article data
- *  5. Marks successfully posted articles as seen in KV
- *
- * KV namespace binding: SEEN_ARTICLES
- * Secrets (set via wrangler secret put):
- *   VERCEL_APP_URL   — https://your-app.vercel.app
- *   AUTOMATE_SECRET  — same as Vercel env var
+ * - Cron: every 10 minutes
+ * - Scrapes ppptv-v2.vercel.app directly (no RSS)
+ * - Posts ONE latest article per run
+ * - Deduplicates via Cloudflare KV (SEEN_ARTICLES)
+ * - Calls Vercel /api/automate with article data
  */
 
-const RSS_URL = "https://ppptv-v2.vercel.app/api/rss";
+const BASE_URL = "https://ppptv-v2.vercel.app";
 const TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
 export default {
-  // Cron trigger
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runPipeline(env));
   },
 
-  // Manual HTTP trigger
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Health check
     if (url.pathname === "/") {
       return new Response(
-        JSON.stringify({ status: "ok", service: "PPP TV Auto Poster" }),
+        JSON.stringify({ status: "ok", service: "PPP TV Auto Poster", cron: "*/10 * * * *" }),
         { headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Manual trigger
     if (url.pathname === "/trigger") {
       ctx.waitUntil(runPipeline(env));
       return new Response(
-        JSON.stringify({ status: "triggered", message: "Pipeline started" }),
+        JSON.stringify({ status: "triggered" }),
         { headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Clear seen cache (useful for testing)
     if (url.pathname === "/clear-cache" && request.method === "POST") {
       const auth = request.headers.get("authorization");
       if (auth !== `Bearer ${env.AUTOMATE_SECRET}`) {
         return new Response("Unauthorized", { status: 401 });
       }
-      // List and delete all seen: keys
       const list = await env.SEEN_ARTICLES.list({ prefix: "seen:" });
       await Promise.all(list.keys.map((k) => env.SEEN_ARTICLES.delete(k.name)));
       return new Response(
@@ -66,55 +54,41 @@ export default {
 async function runPipeline(env) {
   console.log("[PPP TV] Pipeline started");
 
-  // 1. Fetch RSS feed
-  let articles;
+  // 1. Scrape latest article from website
+  let article;
   try {
-    articles = await fetchRSS();
-    console.log(`[PPP TV] Fetched ${articles.length} articles from RSS`);
-  } catch (err) {
-    console.error("[PPP TV] RSS fetch failed:", err.message);
-    return;
-  }
-
-  // 2. Filter unseen via CF KV
-  const unseen = [];
-  for (const article of articles) {
-    const seen = await env.SEEN_ARTICLES.get(`seen:${article.id}`);
-    if (!seen) unseen.push(article);
-  }
-  console.log(`[PPP TV] ${unseen.length} new articles to post`);
-
-  if (unseen.length === 0) {
-    console.log("[PPP TV] Nothing new. Done.");
-    return;
-  }
-
-  // 3. Post each new article via Vercel
-  let posted = 0;
-  const errors = [];
-
-  for (const article of unseen) {
-    try {
-      const result = await postArticle(article, env);
-
-      if (result.success) {
-        // Mark as seen in CF KV
-        await env.SEEN_ARTICLES.put(`seen:${article.id}`, "1", {
-          expirationTtl: TTL_SECONDS,
-        });
-        posted++;
-        console.log(`[PPP TV] Posted: ${article.title}`);
-      } else {
-        errors.push({ id: article.id, error: result.error });
-        console.warn(`[PPP TV] Failed: ${article.title} — ${result.error}`);
-      }
-    } catch (err) {
-      errors.push({ id: article.id, error: err.message });
-      console.error(`[PPP TV] Error on ${article.id}:`, err.message);
+    article = await scrapeLatestArticle();
+    if (!article) {
+      console.log("[PPP TV] No article found on homepage");
+      return;
     }
+    console.log(`[PPP TV] Latest article: ${article.title}`);
+  } catch (err) {
+    console.error("[PPP TV] Scrape failed:", err.message);
+    return;
   }
 
-  console.log(`[PPP TV] Done. Posted: ${posted}, Errors: ${errors.length}`);
+  // 2. Check if already posted
+  const seen = await env.SEEN_ARTICLES.get(`seen:${article.id}`);
+  if (seen) {
+    console.log("[PPP TV] Already posted. Nothing new.");
+    return;
+  }
+
+  // 3. Post via Vercel
+  try {
+    const result = await postArticle(article, env);
+    if (result.success) {
+      await env.SEEN_ARTICLES.put(`seen:${article.id}`, "1", {
+        expirationTtl: TTL_SECONDS,
+      });
+      console.log(`[PPP TV] Posted: ${article.title}`);
+    } else {
+      console.warn(`[PPP TV] Post failed: ${result.error}`);
+    }
+  } catch (err) {
+    console.error("[PPP TV] Post error:", err.message);
+  }
 }
 
 async function postArticle(article, env) {
@@ -136,78 +110,64 @@ async function postArticle(article, env) {
   return { success: data.posted > 0, error: data.errors?.[0]?.message };
 }
 
-// Minimal RSS parser (no npm in CF Workers)
-async function fetchRSS() {
-  const res = await fetch(RSS_URL, {
-    headers: { "User-Agent": "PPPTVAutoPoster/1.0" },
+// Direct HTML scraper — no RSS
+async function scrapeLatestArticle() {
+  const res = await fetch(BASE_URL, {
+    headers: { "User-Agent": "Mozilla/5.0 PPPTVAutoPoster/2.0" },
   });
-  if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Homepage fetch failed: ${res.status}`);
+  const html = await res.text();
 
-  const xml = await res.text();
-  const items = [];
+  // Find first /news/ link
+  const linkMatch = html.match(/href=["'](\/news\/[^"'?#]+)["']/i);
+  if (!linkMatch) return null;
 
-  // Parse <item> blocks
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-  let match;
+  const articleUrl = `${BASE_URL}${linkMatch[1]}`;
+  const articleRes = await fetch(articleUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 PPPTVAutoPoster/2.0" },
+  });
+  if (!articleRes.ok) return null;
+  const articleHtml = await articleRes.text();
 
-  while ((match = itemRegex.exec(xml)) !== null) {
-    const block = match[1];
+  const title = extractMeta(articleHtml, "og:title") || extractMeta(articleHtml, "twitter:title") || "";
+  const imageUrl = extractMeta(articleHtml, "og:image") || extractMeta(articleHtml, "twitter:image") || "";
+  const description = extractMeta(articleHtml, "og:description") || extractMeta(articleHtml, "description") || "";
 
-    const title = extractTag(block, "title");
-    const link = extractTag(block, "link");
-    const description = extractTag(block, "description");
-    const pubDate = extractTag(block, "pubDate");
-    const category = extractTag(block, "category");
+  let category = "NEWS";
+  const catMatch = articleUrl.match(/\/(celebrity|entertainment|music|sports|politics|lifestyle|tech|fashion|tv|film|gossip)\//i);
+  if (catMatch) category = catMatch[1].toUpperCase();
+  const catMeta = extractMeta(articleHtml, "article:section");
+  if (catMeta) category = catMeta.toUpperCase();
 
-    // Extract image from media:content or enclosure
-    const mediaUrl =
-      extractAttr(block, "media:content", "url") ||
-      extractAttr(block, "enclosure", "url") ||
-      "";
-
-    if (!title || !link) continue;
-
-    // Derive canonical URL from base64 slug
-    const slugMatch = link.match(/\/news\/([A-Za-z0-9+/=_-]+)$/);
-    let canonicalUrl = link;
-    if (slugMatch) {
-      try {
-        canonicalUrl = atob(slugMatch[1]);
-      } catch {
-        canonicalUrl = link;
-      }
-    }
-
-    const id = await sha256Short(canonicalUrl);
-
-    items.push({
-      id,
-      title: title.replace(/<!\[CDATA\[|\]\]>/g, "").trim(),
-      url: canonicalUrl,
-      detailUrl: link,
-      imageUrl: mediaUrl,
-      summary: description
-        ? description.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, "").trim().slice(0, 200)
-        : "",
-      category: category
-        ? category.replace(/<!\[CDATA\[|\]\]>/g, "").trim().toUpperCase()
-        : "GENERAL",
-      publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
-      sourceName: "PPP TV",
-    });
+  const paragraphs = [];
+  const pRegex = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+  let m;
+  while ((m = pRegex.exec(articleHtml)) !== null) {
+    const text = m[1].replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+    if (text.length > 40) paragraphs.push(text);
   }
 
-  return items;
+  if (!title) return null;
+
+  const id = await sha256Short(articleUrl);
+
+  return {
+    id,
+    title,
+    url: articleUrl,
+    imageUrl,
+    summary: description.slice(0, 200) || paragraphs[0]?.slice(0, 200) || "",
+    fullBody: paragraphs.slice(0, 20).join("\n\n") || description,
+    sourceName: "PPP TV",
+    category,
+    publishedAt: new Date().toISOString(),
+  };
 }
 
-function extractTag(xml, tag) {
-  const match = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"));
-  return match ? match[1].trim() : "";
-}
-
-function extractAttr(xml, tag, attr) {
-  const match = xml.match(new RegExp(`<${tag}[^>]*${attr}="([^"]*)"`, "i"));
-  return match ? match[1] : "";
+function extractMeta(html, property) {
+  const m = html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["']`, "i"))
+    || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${property}["']`, "i"));
+  return m ? m[1].trim() : "";
 }
 
 async function sha256Short(str) {
@@ -215,8 +175,5 @@ async function sha256Short(str) {
   const data = encoder.encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 16);
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
 }

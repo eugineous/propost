@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateImage } from "@/lib/image-gen";
 import { Article } from "@/lib/types";
 
-// GET /api/preview-image?title=HEADLINE&category=CELEBRITY&imageUrl=...
-// Use this to test the image template without needing social API tokens
+// GET /api/preview-image
+// Optional params: title, category, imageUrl
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
 
@@ -11,16 +11,16 @@ export async function GET(req: NextRequest) {
     id: "preview",
     title:
       searchParams.get("title") ??
-      "BUFFY THE VAMPIRE SLAYER ACTOR NICHOLAS BRENDON DIES AGED 54",
+      "JAY-Z & ERYKAH BADU ARE HEADLINING ROOTS PICNIC THIS SUMMER",
     url: "https://ppptv-v2.vercel.app",
     imageUrl:
       searchParams.get("imageUrl") ??
       "https://deadline.com/wp-content/uploads/2026/03/Chuck-Norris-Donald-Trump-2-shot.jpg",
-    summary: "Preview",
+    summary: searchParams.get("summary") ?? "Do y'all think we're getting new music soon?",
     fullBody: "Preview body",
     sourceName: "PPP TV",
     publishedAt: new Date(),
-    category: (searchParams.get("category") ?? "TV & FILM").toUpperCase(),
+    category: (searchParams.get("category") ?? "NEWS").toUpperCase(),
   };
 
   try {
