@@ -1,7 +1,17 @@
 ﻿"use client";
 import { useState } from "react";
 
-interface DryRunArticle {
+const PINK = "#FF007A";
+const PINK_DIM = "rgba(255,0,122,0.15)";
+const PINK_GLOW = "rgba(255,0,122,0.08)";
+const BLACK = "#000000";
+const SURFACE = "#141414";
+const SURFACE2 = "#1a1a1a";
+const BORDER = "#2a2a2a";
+const MUTED = "#777777";
+const WHITE = "#ffffff";
+
+interface Article {
   id: string;
   title: string;
   category: string;
@@ -13,21 +23,13 @@ interface DryRunArticle {
 interface DryRunResult {
   totalArticlesFound: number;
   newArticles: number;
-  dryRunSample: DryRunArticle[];
-  note: string;
+  dryRunSample: Article[];
 }
-
-const ACCENT = "#E8401C";
-const GOLD = "#F5A623";
-const BG = "#080808";
-const SURFACE = "#111111";
-const BORDER = "#1e1e1e";
-const MUTED = "#555555";
 
 export default function Home() {
   const [result, setResult] = useState<DryRunResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<DryRunArticle | null>(null);
+  const [selected, setSelected] = useState<Article | null>(null);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [imgLoading, setImgLoading] = useState(false);
   const [lightbox, setLightbox] = useState(false);
@@ -44,8 +46,8 @@ export default function Home() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setResult(data);
-      const first = data.dryRunSample?.find((a: DryRunArticle) => a.imageGenerated);
-      if (first) selectArticle(first);
+      const first = data.dryRunSample?.find((a: Article) => a.imageGenerated);
+      if (first) pick(first);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -53,240 +55,263 @@ export default function Home() {
     }
   }
 
-  function selectArticle(article: DryRunArticle) {
+  function pick(article: Article) {
     setSelected(article);
     setImgSrc(null);
     setImgLoading(true);
-    const url = `/api/preview-image?title=${encodeURIComponent(article.title)}&category=${encodeURIComponent(article.category)}&t=${Date.now()}`;
-    setImgSrc(url);
+    setImgSrc(`/api/preview-image?title=${encodeURIComponent(article.title)}&category=${encodeURIComponent(article.category)}&t=${Date.now()}`);
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: BG, color: "#fff" }}>
+    <div style={{ minHeight: "100vh", background: BLACK, color: WHITE, fontFamily: "'Inter', -apple-system, sans-serif" }}>
 
-      {/* Top nav bar */}
-      <nav style={{ borderBottom: `1px solid ${BORDER}`, padding: "0 32px", height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: "rgba(8,8,8,0.95)", backdropFilter: "blur(12px)", zIndex: 100 }}>
+      {/* NAV  Netflix-style: logo left, minimal right */}
+      <nav style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+        height: 68, display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 48px",
+        background: "linear-gradient(to bottom, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0) 100%)",
+      }}>
+        {/* PPP TV Logo  using actual logo image from Wikimedia */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 22, color: GOLD }}></span>
-          <span className="bebas" style={{ fontSize: 26, color: "#fff", letterSpacing: 3 }}>PPP</span>
-          <span className="bebas" style={{ fontSize: 26, color: GOLD, letterSpacing: 3 }}>TV</span>
-          <span style={{ fontSize: 11, color: MUTED, letterSpacing: 3, marginLeft: 2, fontWeight: 600 }}>KENYA</span>
-          <span style={{ width: 1, height: 20, background: BORDER, margin: "0 12px" }} />
-          <span style={{ fontSize: 12, color: MUTED, fontWeight: 500 }}>Auto Poster</span>
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/PPP_TV_LOGO.png/240px-PPP_TV_LOGO.png"
+            alt="PPP TV"
+            style={{ height: 44, width: "auto", objectFit: "contain" }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+            <span style={{ fontSize: 11, color: PINK, fontWeight: 800, letterSpacing: 3, textTransform: "uppercase" }}>Auto Poster</span>
+          </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e" }} />
           <span style={{ fontSize: 12, color: MUTED }}>Live</span>
         </div>
       </nav>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 32px" }}>
-
-        {/* Hero */}
-        <div style={{ marginBottom: 48 }}>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 16, marginBottom: 12 }}>
-            <h1 className="bebas" style={{ fontSize: 72, lineHeight: 0.9, letterSpacing: 2 }}>
-              <span style={{ color: ACCENT }}>PPP TV</span>{" "}
-              <span style={{ color: "#fff" }}>AUTO</span>{" "}
-              <span style={{ color: GOLD }}>POSTER</span>
-            </h1>
+      {/* HERO  Netflix-style big banner */}
+      <div style={{
+        position: "relative", height: 480, overflow: "hidden",
+        background: `linear-gradient(135deg, #0a0a0a 0%, #1a001a 50%, #0a0a0a 100%)`,
+        display: "flex", alignItems: "flex-end",
+      }}>
+        {/* Pink glow orb */}
+        <div style={{
+          position: "absolute", top: "20%", left: "30%",
+          width: 600, height: 400,
+          background: `radial-gradient(ellipse, ${PINK_GLOW} 0%, transparent 70%)`,
+          pointerEvents: "none",
+        }} />
+        <div style={{ position: "relative", zIndex: 2, padding: "0 64px 64px 64px", maxWidth: 700 }}>
+          <div style={{ fontSize: 11, color: PINK, fontWeight: 800, letterSpacing: 4, textTransform: "uppercase", marginBottom: 16 }}>
+            PPP TV Kenya  Auto Poster
           </div>
-          <p style={{ color: MUTED, fontSize: 14, maxWidth: 520, lineHeight: 1.6 }}>
-            Scrapes the latest news from PPP TV Kenya, generates branded 4:5 social images in Bebas Neue, and auto-posts to Instagram &amp; Facebook every 10 minutes.
+          <h1 style={{
+            fontFamily: "'Bebas Neue', sans-serif",
+            fontSize: 80, lineHeight: 0.9, letterSpacing: 2,
+            color: WHITE, marginBottom: 20,
+          }}>
+            LATEST NEWS<br />
+            <span style={{ color: PINK }}>AUTO-POSTED</span>
+          </h1>
+          <p style={{ fontSize: 15, color: "rgba(255,255,255,0.6)", lineHeight: 1.6, marginBottom: 32, maxWidth: 480 }}>
+            Scrapes PPP TV Kenya every 10 minutes. Generates branded 4:5 images in Bebas Neue. Posts to Instagram &amp; Facebook automatically.
           </p>
-        </div>
-
-        {/* Stats row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 40 }}>
-          {[
-            { label: "News Source", value: "ppptv-v2.vercel.app", accent: false, ok: true },
-            { label: "Image Format", value: "1080 × 1350  4:5", accent: false, ok: true },
-            { label: "Social APIs", value: "Awaiting tokens", accent: true, ok: false },
-          ].map((c) => (
-            <div key={c.label} style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 10, padding: "18px 22px" }}>
-              <div style={{ fontSize: 10, color: MUTED, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8, fontWeight: 600 }}>{c.label}</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: c.ok ? "#22c55e" : ACCENT }}>{c.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Action button */}
-        <div style={{ marginBottom: 36 }}>
           <button
             onClick={fetchArticles}
             disabled={loading}
             style={{
-              background: loading ? SURFACE : ACCENT,
-              color: "#fff",
-              border: loading ? `1px solid ${BORDER}` : "none",
-              borderRadius: 8,
-              padding: "14px 32px",
-              fontWeight: 800,
-              fontSize: 14,
+              background: loading ? "rgba(255,255,255,0.1)" : PINK,
+              color: WHITE, border: "none", borderRadius: 6,
+              padding: "14px 36px", fontWeight: 800, fontSize: 15,
               cursor: loading ? "not-allowed" : "pointer",
-              letterSpacing: 1,
-              textTransform: "uppercase",
-              transition: "opacity 0.15s",
-              opacity: loading ? 0.6 : 1,
+              letterSpacing: 1, textTransform: "uppercase",
+              opacity: loading ? 0.7 : 1,
+              transition: "all 0.2s",
+              boxShadow: loading ? "none" : `0 0 32px rgba(255,0,122,0.4)`,
             }}
           >
-            {loading ? "Fetching" : " Fetch Latest Article"}
+            {loading ? "Fetching" : "  Preview Latest Article"}
           </button>
-          {result && (
-            <span style={{ marginLeft: 16, fontSize: 13, color: MUTED }}>
-              {result.totalArticlesFound} articles in feed  {result.dryRunSample.length} previewed
-            </span>
-          )}
         </div>
+        {/* Bottom fade */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 160, background: "linear-gradient(to bottom, transparent, #000)" }} />
+      </div>
+
+      {/* MAIN CONTENT */}
+      <div style={{ padding: "0 48px 80px 48px", maxWidth: 1200, margin: "0 auto" }}>
 
         {error && (
-          <div style={{ background: "#1a0808", border: `1px solid #5a1a1a`, borderRadius: 8, padding: "12px 18px", color: "#f87171", fontSize: 13, marginBottom: 24 }}>
+          <div style={{ background: "#1a0808", border: "1px solid #5a1a1a", borderRadius: 8, padding: "14px 20px", color: "#f87171", fontSize: 13, marginBottom: 24, marginTop: 32 }}>
              {error}
           </div>
         )}
 
-        {/* Preview grid */}
-        {result && (
-          <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 20, marginBottom: 48 }}>
+        {/* Stats row  Netflix-style info strip */}
+        <div style={{ display: "flex", gap: 32, padding: "32px 0", borderBottom: `1px solid ${BORDER}`, marginBottom: 40 }}>
+          {[
+            { label: "Source", value: "ppptv-v2.vercel.app" },
+            { label: "Format", value: "1080 × 1350  4:5" },
+            { label: "Cron", value: "Every 10 minutes" },
+            { label: "Social", value: result ? `${result.totalArticlesFound} articles found` : "Awaiting tokens" },
+          ].map((s) => (
+            <div key={s.label}>
+              <div style={{ fontSize: 10, color: MUTED, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600, marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: WHITE }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
 
-            {/* Article list */}
-            <div>
-              <div style={{ fontSize: 10, color: MUTED, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600, marginBottom: 12 }}>Articles</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {result && (
+          <>
+            {/* Article cards row  Netflix horizontal scroll style */}
+            <div style={{ marginBottom: 40 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: WHITE }}>
+                Articles <span style={{ color: MUTED, fontWeight: 400, fontSize: 13 }}> click to preview</span>
+              </div>
+              <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
                 {result.dryRunSample.map((a) => (
-                  <button
+                  <div
                     key={a.id}
-                    onClick={() => a.imageGenerated && selectArticle(a)}
+                    onClick={() => a.imageGenerated && pick(a)}
                     style={{
-                      background: selected?.id === a.id ? "#1a1a1a" : SURFACE,
-                      border: `1px solid ${selected?.id === a.id ? ACCENT : BORDER}`,
-                      borderRadius: 8,
-                      padding: "14px 16px",
-                      textAlign: "left",
+                      flexShrink: 0, width: 220,
+                      background: selected?.id === a.id ? SURFACE2 : SURFACE,
+                      border: `1px solid ${selected?.id === a.id ? PINK : BORDER}`,
+                      borderRadius: 8, padding: "16px",
                       cursor: a.imageGenerated ? "pointer" : "default",
-                      opacity: a.imageGenerated ? 1 : 0.45,
-                      transition: "border-color 0.15s",
+                      opacity: a.imageGenerated ? 1 : 0.4,
+                      transition: "border-color 0.15s, transform 0.15s",
+                      transform: selected?.id === a.id ? "scale(1.02)" : "scale(1)",
+                      boxShadow: selected?.id === a.id ? `0 0 20px ${PINK_DIM}` : "none",
                     }}
                   >
-                    <div style={{ fontSize: 10, color: ACCENT, fontWeight: 800, letterSpacing: 2, marginBottom: 6, textTransform: "uppercase" }}>{a.category}</div>
-                    <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>{a.title.slice(0, 85)}{a.title.length > 85 ? "" : ""}</div>
-                    {a.error && <div style={{ fontSize: 11, color: "#f87171", marginTop: 6 }}> {a.error.slice(0, 55)}</div>}
-                    {a.imageGenerated && <div style={{ fontSize: 11, color: "#22c55e", marginTop: 6, fontWeight: 600 }}> Image ready</div>}
-                  </button>
+                    <div style={{ fontSize: 10, color: PINK, fontWeight: 800, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>{a.category}</div>
+                    <div style={{ fontSize: 12, color: "#ccc", lineHeight: 1.5 }}>{a.title.slice(0, 80)}{a.title.length > 80 ? "" : ""}</div>
+                    {a.imageGenerated && <div style={{ fontSize: 11, color: "#22c55e", marginTop: 10, fontWeight: 600 }}> Image ready</div>}
+                    {a.error && <div style={{ fontSize: 11, color: "#f87171", marginTop: 10 }}> Failed</div>}
+                  </div>
                 ))}
               </div>
             </div>
 
-            {/* Image preview */}
-            <div>
-              <div style={{ fontSize: 10, color: MUTED, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600, marginBottom: 12 }}>
-                Generated Image {selected ? ` ${selected.category}` : ""}
-              </div>
-              <div
-                onClick={() => imgSrc && !imgLoading && setLightbox(true)}
-                style={{
-                  background: SURFACE,
-                  border: `1px solid ${BORDER}`,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  aspectRatio: "4 / 5",
-                  maxWidth: 420,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  position: "relative",
-                  cursor: imgSrc && !imgLoading ? "zoom-in" : "default",
-                }}
-              >
-                {imgLoading && !imgSrc && (
-                  <div style={{ color: MUTED, fontSize: 13 }}>Generating</div>
-                )}
-                {!imgSrc && !imgLoading && (
-                  <div style={{ color: "#2a2a2a", fontSize: 13 }}>Select an article</div>
-                )}
-                {imgSrc && (
-                  <>
-                    {imgLoading && (
-                      <div style={{ position: "absolute", color: MUTED, fontSize: 13, zIndex: 2 }}>Generating</div>
-                    )}
-                    <img
-                      src={imgSrc}
-                      alt="Generated post"
-                      onLoad={() => setImgLoading(false)}
-                      onError={() => { setImgLoading(false); setImgSrc(null); }}
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: imgLoading ? "none" : "block" }}
-                    />
-                    {!imgLoading && (
-                      <div style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: 11, padding: "4px 10px", borderRadius: 4, letterSpacing: 0.5 }}>
-                        Click to enlarge
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+            {/* Image preview  Netflix detail panel style */}
+            {selected && (
+              <div style={{
+                background: SURFACE,
+                border: `1px solid ${BORDER}`,
+                borderRadius: 12, overflow: "hidden",
+                display: "grid", gridTemplateColumns: "auto 1fr",
+                gap: 0,
+              }}>
+                {/* Image */}
+                <div
+                  onClick={() => imgSrc && !imgLoading && setLightbox(true)}
+                  style={{
+                    width: 320, aspectRatio: "4/5",
+                    background: "#0a0a0a",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    position: "relative", cursor: imgSrc && !imgLoading ? "zoom-in" : "default",
+                    flexShrink: 0,
+                  }}
+                >
+                  {imgLoading && <div style={{ color: MUTED, fontSize: 13 }}>Generating</div>}
+                  {imgSrc && (
+                    <>
+                      <img
+                        src={imgSrc}
+                        alt="Generated"
+                        onLoad={() => setImgLoading(false)}
+                        onError={() => { setImgLoading(false); setImgSrc(null); }}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: imgLoading ? "none" : "block" }}
+                      />
+                      {!imgLoading && (
+                        <div style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(0,0,0,0.8)", color: WHITE, fontSize: 11, padding: "4px 10px", borderRadius: 4 }}>
+                          Click to enlarge
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
-              {selected?.imageGenerated && !imgLoading && (
-                <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "8px 14px", fontSize: 12 }}>
-                    <span style={{ color: MUTED }}>Instagram: </span>
-                    <span style={{ color: "#22c55e", fontWeight: 700 }}>{selected.captionLength.instagram} chars</span>
+                {/* Detail panel */}
+                <div style={{ padding: "36px 40px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                  <div style={{ fontSize: 11, color: PINK, fontWeight: 800, letterSpacing: 3, textTransform: "uppercase", marginBottom: 12 }}>{selected.category}</div>
+                  <h2 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 42, lineHeight: 1, letterSpacing: 1, color: WHITE, marginBottom: 24 }}>{selected.title}</h2>
+                  <div style={{ display: "flex", gap: 16, marginBottom: 24 }}>
+                    <div style={{ background: BLACK, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 16px" }}>
+                      <div style={{ fontSize: 10, color: MUTED, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Instagram</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "#22c55e" }}>{selected.captionLength.instagram} <span style={{ fontSize: 11, color: MUTED, fontWeight: 400 }}>chars</span></div>
+                    </div>
+                    <div style={{ background: BLACK, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "10px 16px" }}>
+                      <div style={{ fontSize: 10, color: MUTED, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Facebook</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "#22c55e" }}>{selected.captionLength.facebook} <span style={{ fontSize: 11, color: MUTED, fontWeight: 400 }}>chars</span></div>
+                    </div>
                   </div>
-                  <div style={{ background: SURFACE, border: `1px solid ${BORDER}`, borderRadius: 6, padding: "8px 14px", fontSize: 12 }}>
-                    <span style={{ color: MUTED }}>Facebook: </span>
-                    <span style={{ color: "#22c55e", fontWeight: 700 }}>{selected.captionLength.facebook} chars</span>
+                  <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
+                    Image generated at 1080×1350 (4:5) using Bebas Neue.<br />
+                    PPP TV pink branding with gradient overlay.
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Lightbox */}
         {lightbox && imgSrc && (
-          <div onClick={() => setLightbox(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.95)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, cursor: "zoom-out" }}>
+          <div onClick={() => setLightbox(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.96)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, cursor: "zoom-out" }}>
             <img src={imgSrc} alt="Full size" style={{ maxWidth: "88vw", maxHeight: "92vh", borderRadius: 8 }} />
-            <div style={{ position: "absolute", top: 20, right: 24, color: MUTED, fontSize: 12 }}>Click to close</div>
+            <div style={{ position: "absolute", top: 20, right: 28, color: MUTED, fontSize: 12 }}>Click to close</div>
           </div>
         )}
 
-        {/* Divider */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, marginBottom: 40 }} />
-
-        {/* Setup checklist */}
-        <div style={{ marginBottom: 48 }}>
-          <div className="bebas" style={{ fontSize: 32, letterSpacing: 2, marginBottom: 24, color: "#fff" }}>
-            SETUP <span style={{ color: ACCENT }}>CHECKLIST</span>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Setup checklist  Netflix "More Info" style */}
+        <div style={{ marginTop: 64 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: WHITE }}>Setup Checklist</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {[
               { done: true, label: "Next.js app deployed on Vercel" },
-              { done: true, label: "RSS scraper + Bebas Neue image generator ready" },
-              { done: true, label: "Cloudflare Worker deployed  cron every 10 minutes" },
-              { done: true, label: "Cloudflare KV (SEEN_ARTICLES) created and bound" },
-              { done: false, label: "Add INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_ACCOUNT_ID to Vercel env vars" },
-              { done: false, label: "Add FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID to Vercel env vars" },
-            ].map((item) => (
-              <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: SURFACE, border: `1px solid ${item.done ? "#1a2e1a" : BORDER}`, borderRadius: 8 }}>
-                <div style={{ width: 22, height: 22, borderRadius: "50%", background: item.done ? "#14532d" : "#1a1a1a", border: `2px solid ${item.done ? "#22c55e" : BORDER}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {item.done && <span style={{ color: "#22c55e", fontSize: 12, fontWeight: 900 }}></span>}
+              { done: true, label: "RSS scraper + Bebas Neue image generator (4:5)" },
+              { done: true, label: "Cloudflare Worker  cron every 10 minutes" },
+              { done: true, label: "Cloudflare KV (SEEN_ARTICLES) deduplication" },
+              { done: false, label: "Add INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_ACCOUNT_ID" },
+              { done: false, label: "Add FACEBOOK_ACCESS_TOKEN + FACEBOOK_PAGE_ID" },
+            ].map((item, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 16,
+                padding: "14px 20px",
+                background: i % 2 === 0 ? SURFACE : "transparent",
+                borderRadius: 6,
+              }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+                  background: item.done ? PINK : "transparent",
+                  border: `2px solid ${item.done ? PINK : BORDER}`,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {item.done && <span style={{ color: WHITE, fontSize: 11, fontWeight: 900 }}></span>}
                 </div>
-                <span style={{ fontSize: 13, color: item.done ? "#ccc" : MUTED, fontWeight: item.done ? 500 : 400 }}>{item.label}</span>
+                <span style={{ fontSize: 13, color: item.done ? WHITE : MUTED }}>{item.label}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 24, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 16, color: GOLD }}></span>
-            <span className="bebas" style={{ fontSize: 18, color: "#fff", letterSpacing: 2 }}>PPP</span>
-            <span className="bebas" style={{ fontSize: 18, color: GOLD, letterSpacing: 2 }}>TV</span>
-            <span style={{ fontSize: 10, color: MUTED, letterSpacing: 3, marginLeft: 2 }}>KENYA</span>
+        <div style={{ marginTop: 64, paddingTop: 24, borderTop: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/PPP_TV_LOGO.png/120px-PPP_TV_LOGO.png"
+              alt="PPP TV"
+              style={{ height: 28, width: "auto", objectFit: "contain" }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+            <span style={{ fontSize: 12, color: MUTED }}>Auto Poster  Vercel + Cloudflare</span>
           </div>
-          <span style={{ fontSize: 12, color: MUTED }}>Auto Poster  Powered by Vercel + Cloudflare</span>
+          <span style={{ fontSize: 12, color: MUTED }}>PPP TV Kenya © 2026</span>
         </div>
-
       </div>
     </div>
   );

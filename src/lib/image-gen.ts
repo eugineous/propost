@@ -4,10 +4,9 @@ import { Article } from "./types";
 
 const W = 1080;
 const H = 1350;
-const ACCENT = "#E8401C";
-const GOLD   = "#F5A623";
-const WHITE  = "#FFFFFF";
-const BLACK  = "#000000";
+const PINK  = "#FF007A";
+const WHITE = "#FFFFFF";
+const BLACK = "#000000";
 
 const WHITE_WORDS = new Set([
   "A","AN","THE","AND","OR","BUT","IN","ON","AT","TO","FOR","OF","WITH",
@@ -43,7 +42,7 @@ function buildHeadlineSpans(title: string) {
   return words.map((word, i) => ({
     type: "span" as const,
     props: {
-      style: { color: isAccentWord(word) ? ACCENT : WHITE, marginRight: i < words.length - 1 ? 10 : 0 },
+      style: { color: isAccentWord(word) ? PINK : WHITE, marginRight: i < words.length - 1 ? 10 : 0 },
       children: word,
     },
   }));
@@ -88,37 +87,128 @@ export async function generateImage(article: Article): Promise<Buffer> {
   const headlineSpans = buildHeadlineSpans(article.title);
   const category = article.category.toUpperCase();
   const charCount = article.title.length;
-  let fs = 118;
-  if (charCount > 60) fs = 96;
-  if (charCount > 80) fs = 82;
-  if (charCount > 100) fs = 70;
+  let headlineFontSize = 118;
+  if (charCount > 60) headlineFontSize = 96;
+  if (charCount > 80) headlineFontSize = 82;
+  if (charCount > 100) headlineFontSize = 70;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const svg = await (satori as any)(
-    { type: "div", props: { style: { width: W, height: H, display: "flex", flexDirection: "column", position: "relative", backgroundColor: BLACK, overflow: "hidden", fontFamily: "BebasNeue" },
-      children: [
-        bgBase64 ? { type: "img", props: { src: bgBase64, style: { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover", objectPosition: "center top" } } } : null,
-        { type: "div", props: { style: { position: "absolute", left: 0, right: 0, top: 0, height: H, background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.5) 54%, rgba(0,0,0,0.88) 67%, rgba(0,0,0,0.97) 76%, rgba(0,0,0,1) 85%)" } } },
-        { type: "div", props: { style: { position: "absolute", top: 40, left: 44, display: "flex", flexDirection: "column", alignItems: "flex-start" },
-          children: [
-            { type: "div", props: { style: { display: "flex", alignItems: "center", gap: 4, background: "rgba(0,0,0,0.5)", paddingLeft: 10, paddingRight: 14, paddingTop: 7, paddingBottom: 7, borderRadius: 4 },
+    {
+      type: "div",
+      props: {
+        style: {
+          width: W, height: H, display: "flex", flexDirection: "column",
+          position: "relative", backgroundColor: BLACK, overflow: "hidden",
+          fontFamily: "BebasNeue",
+        },
+        children: [
+          bgBase64 ? {
+            type: "img",
+            props: {
+              src: bgBase64,
+              style: { position: "absolute", top: 0, left: 0, width: W, height: H, objectFit: "cover", objectPosition: "center top" },
+            },
+          } : null,
+          {
+            type: "div",
+            props: {
+              style: {
+                position: "absolute", left: 0, right: 0, top: 0, height: H,
+                background: "linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 52%, rgba(0,0,0,0.88) 65%, rgba(0,0,0,1) 78%)",
+              },
+            },
+          },
+          {
+            type: "div",
+            props: {
+              style: {
+                position: "absolute", top: 40, left: 44,
+                display: "flex", flexDirection: "column", alignItems: "flex-start",
+              },
               children: [
-                { type: "span", props: { style: { fontSize: 18, color: GOLD, lineHeight: 1, marginRight: 5 }, children: "\u265B" } },
-                { type: "span", props: { style: { color: WHITE, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "PPP" } },
-                { type: "span", props: { style: { color: GOLD, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "TV" } },
-              ] } },
-            { type: "div", props: { style: { color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: 4, marginTop: 3, marginLeft: 10 }, children: "KENYA" } },
-          ] } },
-        { type: "div", props: { style: { position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "flex-start", padding: "0 44px 52px 44px" },
-          children: [
-            { type: "div", props: { style: { display: "flex", alignSelf: "flex-start", backgroundColor: WHITE, paddingLeft: 16, paddingRight: 16, paddingTop: 5, paddingBottom: 5, borderRadius: 4, marginBottom: 18 },
-              children: [{ type: "span", props: { style: { color: BLACK, fontSize: 20, fontWeight: 700, letterSpacing: 3 }, children: category } }] } },
-            { type: "div", props: { style: { display: "flex", flexWrap: "wrap", fontSize: fs, fontWeight: 400, lineHeight: 0.92, letterSpacing: 1, marginBottom: 22 }, children: headlineSpans } },
-            article.summary ? { type: "div", props: { style: { color: "rgba(255,255,255,0.72)", fontSize: 26, fontWeight: 400, fontStyle: "italic", lineHeight: 1.35, letterSpacing: 0.3 },
-              children: article.summary.slice(0, 90) + (article.summary.length > 90 ? "\u2026" : "") } } : null,
-          ].filter(Boolean) } },
-      ].filter(Boolean) } },
-    { width: W, height: H, fonts: [{ name: "BebasNeue", data: fontData, weight: 400, style: "normal" }] }
+                {
+                  type: "div",
+                  props: {
+                    style: {
+                      display: "flex", alignItems: "center", gap: 4,
+                      background: "rgba(0,0,0,0.55)",
+                      paddingLeft: 10, paddingRight: 14, paddingTop: 7, paddingBottom: 7,
+                      borderRadius: 4,
+                    },
+                    children: [
+                      { type: "span", props: { style: { fontSize: 18, color: PINK, lineHeight: 1, marginRight: 5 }, children: "\u25CF" } },
+                      { type: "span", props: { style: { color: WHITE, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "PPP" } },
+                      { type: "span", props: { style: { color: PINK, fontSize: 30, fontWeight: 700, letterSpacing: 2, lineHeight: 1 }, children: "TV" } },
+                    ],
+                  },
+                },
+                {
+                  type: "div",
+                  props: {
+                    style: { color: PINK, fontSize: 11, fontWeight: 700, letterSpacing: 4, marginTop: 3, marginLeft: 10 },
+                    children: "KENYA",
+                  },
+                },
+              ],
+            },
+          },
+          {
+            type: "div",
+            props: {
+              style: {
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                display: "flex", flexDirection: "column", alignItems: "flex-start",
+                padding: "0 44px 52px 44px",
+              },
+              children: [
+                {
+                  type: "div",
+                  props: {
+                    style: {
+                      display: "flex", alignSelf: "flex-start",
+                      backgroundColor: PINK,
+                      paddingLeft: 16, paddingRight: 16, paddingTop: 5, paddingBottom: 5,
+                      borderRadius: 4, marginBottom: 18,
+                    },
+                    children: [{
+                      type: "span",
+                      props: { style: { color: WHITE, fontSize: 20, fontWeight: 700, letterSpacing: 3 }, children: category },
+                    }],
+                  },
+                },
+                {
+                  type: "div",
+                  props: {
+                    style: {
+                      display: "flex", flexWrap: "wrap",
+                      fontSize: headlineFontSize, fontWeight: 400,
+                      lineHeight: 0.92, letterSpacing: 1, marginBottom: 22,
+                    },
+                    children: headlineSpans,
+                  },
+                },
+                article.summary ? {
+                  type: "div",
+                  props: {
+                    style: {
+                      color: "rgba(255,255,255,0.72)", fontSize: 26, fontWeight: 400,
+                      fontStyle: "italic", lineHeight: 1.35, letterSpacing: 0.3,
+                    },
+                    children: article.summary.slice(0, 90) + (article.summary.length > 90 ? "\u2026" : ""),
+                  },
+                } : null,
+              ].filter(Boolean),
+            },
+          },
+        ].filter(Boolean),
+      },
+    },
+    {
+      width: W,
+      height: H,
+      fonts: [{ name: "BebasNeue", data: fontData, weight: 400, style: "normal" }],
+    }
   );
 
   return sharp(Buffer.from(svg)).resize(W, H).jpeg({ quality: 93 }).toBuffer();
