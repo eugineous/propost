@@ -26,6 +26,13 @@ interface PostLogEntry {
   isBreaking?: boolean;
 }
 
+interface RetryState {
+  articleId: string;
+  platform: "instagram" | "facebook" | "both";
+  loading: boolean;
+  result?: { success: boolean; error?: string };
+}
+
 interface UrlPreview {
   scraped: { type: string; title: string; description: string; imageUrl: string; sourceName: string };
   ai: { clickbaitTitle: string; caption: string };
@@ -56,6 +63,7 @@ export default function Home() {
   const [urlPosting, setUrlPosting] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [urlSuccess, setUrlSuccess] = useState<string | null>(null);
+  const [retryStates, setRetryStates] = useState<Record<string, RetryState>>({});
   const [lightbox, setLightbox] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +146,32 @@ export default function Home() {
       setUrlError(e.message);
     } finally {
       setUrlPosting(false);
+    }
+  }
+
+
+  async function handleRetry(entry: PostLogEntry, platform: "instagram" | "facebook") {
+    const key = entry.articleId + "_" + platform;
+    setRetryStates(s => ({ ...s, [key]: { articleId: entry.articleId, platform, loading: true } }));
+    try {
+      const res = await fetch("/api/retry-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          articleId: entry.articleId,
+          title: entry.title,
+          caption: entry.title, // will be regenerated
+          articleUrl: entry.url,
+          category: entry.category,
+          platform,
+        }),
+      });
+      const data = await res.json();
+      const success = platform === "instagram" ? data.instagram?.success : data.facebook?.success;
+      setRetryStates(s => ({ ...s, [key]: { articleId: entry.articleId, platform, loading: false, result: { success, error: success ? undefined : (data.instagram?.error || data.facebook?.error || data.error) } } }));
+      if (success) setTimeout(fetchLog, 1500);
+    } catch (e: any) {
+      setRetryStates(s => ({ ...s, [key]: { articleId: entry.articleId, platform, loading: false, result: { success: false, error: e.message } } }));
     }
   }
 
@@ -362,11 +396,31 @@ export default function Home() {
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: MUTED, marginBottom: 2 }}>IG</div>
-                    <div style={{ fontSize: 12, color: entry.instagram.success ? GREEN : RED }}>{entry.instagram.success ? "✓" : "✗"}</div>
+                    {entry.instagram.success ? (
+                      <div style={{ fontSize: 12, color: GREEN }}>✓</div>
+                    ) : (
+                      <button
+                        onClick={() => handleRetry(entry, "instagram")}
+                        disabled={retryStates[entry.articleId + "_instagram"]?.loading}
+                        style={{ fontSize: 10, color: WHITE, background: PINK, border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer", opacity: retryStates[entry.articleId + "_instagram"]?.loading ? 0.5 : 1 }}
+                      >
+                        {retryStates[entry.articleId + "_instagram"]?.loading ? "…" : retryStates[entry.articleId + "_instagram"]?.result?.success ? "✓" : "↺"}
+                      </button>
+                    )}
                   </div>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: MUTED, marginBottom: 2 }}>FB</div>
-                    <div style={{ fontSize: 12, color: entry.facebook.success ? GREEN : RED }}>{entry.facebook.success ? "✓" : "✗"}</div>
+                    {entry.facebook.success ? (
+                      <div style={{ fontSize: 12, color: GREEN }}>✓</div>
+                    ) : (
+                      <button
+                        onClick={() => handleRetry(entry, "facebook")}
+                        disabled={retryStates[entry.articleId + "_facebook"]?.loading}
+                        style={{ fontSize: 10, color: WHITE, background: PINK, border: "none", borderRadius: 4, padding: "2px 6px", cursor: "pointer", opacity: retryStates[entry.articleId + "_facebook"]?.loading ? 0.5 : 1 }}
+                      >
+                        {retryStates[entry.articleId + "_facebook"]?.loading ? "…" : retryStates[entry.articleId + "_facebook"]?.result?.success ? "✓" : "↺"}
+                      </button>
+                    )}
                   </div>
                   <div style={{ fontSize: 11, color: MUTED, whiteSpace: "nowrap" }}>{timeAgo(entry.postedAt)}</div>
                 </div>
