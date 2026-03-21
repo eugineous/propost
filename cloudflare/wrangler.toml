@@ -11,7 +11,7 @@ crons = ["*/30 * * * *"]
 # Then paste the returned id below
 [[kv_namespaces]]
 binding = "SEEN_ARTICLES"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "fa43238e08df4ef691d8bfcde1160f14"
 
 # Secrets (set via wrangler secret put):
 #   VERCEL_APP_URL   = https://your-app.vercel.app
