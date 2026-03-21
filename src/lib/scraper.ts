@@ -1,5 +1,4 @@
 import Parser from "rss-parser";
-import axios from "axios";
 import * as cheerio from "cheerio";
 import { createHash } from "crypto";
 import { Article } from "./types";
@@ -22,15 +21,15 @@ function hashUrl(url: string): string {
 
 async function fetchFullBody(articlePageUrl: string): Promise<string> {
   try {
-    const { data } = await axios.get(articlePageUrl, { timeout: 10000 });
+    const res = await fetch(articlePageUrl, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return "";
+    const data = await res.text();
     const $ = cheerio.load(data);
-    // Article body paragraphs are inside the main content area
     const paragraphs: string[] = [];
     $("article p, main p, .prose p, .content p").each((_, el) => {
       const text = $(el).text().trim();
       if (text.length > 20) paragraphs.push(text);
     });
-    // Fallback: grab all <p> tags if specific selectors yield nothing
     if (paragraphs.length === 0) {
       $("p").each((_, el) => {
         const text = $(el).text().trim();
@@ -52,7 +51,6 @@ export async function fetchArticles(): Promise<Article[]> {
     const rawLink = item.link ?? "";
     if (!title || !rawLink) continue;
 
-    // The link is the ppptv detail page URL
     const detailUrl = rawLink.startsWith("http")
       ? rawLink
       : `${BASE_URL}${rawLink}`;
@@ -65,13 +63,9 @@ export async function fetchArticles(): Promise<Article[]> {
 
     const summary = (item.contentSnippet ?? item.summary ?? "").trim();
     const sourceName = (item.creator ?? (item as any).author ?? "PPP TV").trim();
-    const category = (
-      (item.categories?.[0] ?? "GENERAL") as string
-    ).toUpperCase();
+    const category = ((item.categories?.[0] ?? "GENERAL") as string).toUpperCase();
     const publishedAt = item.pubDate ? new Date(item.pubDate) : new Date();
 
-    // Decode the canonical article URL from the base64 slug in the detail page path
-    // e.g. /news/aHR0cHM6Ly8... → decode base64 → original source URL
     const slugMatch = detailUrl.match(/\/news\/([A-Za-z0-9+/=_-]+)$/);
     let canonicalUrl = detailUrl;
     if (slugMatch) {

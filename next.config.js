@@ -11,8 +11,14 @@ const nextConfig = {
       "deadline.com",
     ],
   },
-  experimental: {
-    serverActions: true,
+  // serverActions is on by default in Next.js 14 — no config needed
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Prevent axios/undici from being bundled by webpack on the server
+      // (they work fine as external Node.js modules)
+      config.externals = [...(config.externals || []), "axios"];
+    }
+    return config;
   },
 };
 
