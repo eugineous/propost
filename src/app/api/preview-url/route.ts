@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       },
       ai,
       category: article.category,
-      imageBase64: imageBuffer.toString("base64"),
+      imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

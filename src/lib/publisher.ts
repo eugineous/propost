@@ -158,7 +158,11 @@ async function publishToFacebook(
     );
     const form = new FormData();
     form.append("source", blob, "image.jpg");
-    form.append("caption", post.caption);
+    // Facebook: append article link so followers can read the full story
+    const fbCaption = post.articleUrl
+      ? post.caption + "\n\n🔗 " + post.articleUrl
+      : post.caption;
+    form.append("caption", fbCaption);
     form.append("access_token", token);
 
     const res = await withRetry(() =>
