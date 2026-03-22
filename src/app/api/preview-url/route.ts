@@ -18,15 +18,42 @@ function typeToCategory(type: string, title: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { url?: string; category?: string };
+  let body: { url?: string; category?: string; manualTitle?: string; manualCaption?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { url, category } = body;
+  const { url, category, manualTitle, manualCaption } = body;
   if (!url) return NextResponse.json({ error: "url is required" }, { status: 400 });
+
+  // Instagram blocks all server-side scraping — handle via manual input
+  if (/instagram\.com/.test(url)) {
+    if (!manualTitle || !manualCaption) {
+      return NextResponse.json({ error: "INSTAGRAM_MANUAL", message: "Instagram blocks scraping. Please enter the title and caption manually." }, { status: 422 });
+    }
+    // Use manual content provided by user
+    const article: Article = {
+      id: createHash("sha256").update(url).digest("hex").slice(0, 16),
+      title: manualTitle,
+      url,
+      imageUrl: "",
+      summary: manualCaption,
+      fullBody: manualCaption,
+      sourceName: "Instagram",
+      category: category || "CELEBRITY",
+      publishedAt: new Date(),
+    };
+    const ai = await generateAIContent(article);
+    const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
+    const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
+    return NextResponse.json({
+      scraped: { type: "instagram", title: manualTitle, description: manualCaption, imageUrl: "", sourceName: "Instagram" },
+      ai, category: article.category,
+      imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
+    });
+  }
 
   try {
     const scraped = await scrapeUrl(url);
-    if (!scraped.title) return NextResponse.json({ error: "Could not extract content" }, { status: 422 });
+    if (!scraped.title) return NextResponse.json({ error: "Could not extract content from this URL" }, { status: 422 });
 
     const article: Article = {
       id: createHash("sha256").update(url).digest("hex").slice(0, 16),
@@ -45,15 +72,8 @@ export async function POST(req: NextRequest) {
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
     return NextResponse.json({
-      scraped: {
-        type: scraped.type,
-        title: scraped.title,
-        description: scraped.description,
-        imageUrl: scraped.imageUrl,
-        sourceName: scraped.sourceName,
-      },
-      ai,
-      category: article.category,
+      scraped: { type: scraped.type, title: scraped.title, description: scraped.description, imageUrl: scraped.imageUrl, sourceName: scraped.sourceName },
+      ai, category: article.category,
       imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
     });
   } catch (err: any) {

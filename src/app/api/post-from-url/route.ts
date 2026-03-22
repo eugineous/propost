@@ -23,7 +23,6 @@ async function logPost(entry: object): Promise<void> {
   } catch { /* non-fatal */ }
 }
 
-// Map URL type to article category
 function typeToCategory(type: string, title: string): string {
   const t = title.toLowerCase();
   if (type === "youtube" || type === "tiktok") return "TV & FILM";
@@ -36,58 +35,60 @@ function typeToCategory(type: string, title: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  // Auth check
   const auth = req.headers.get("authorization");
   if (auth !== "Bearer " + process.env.AUTOMATE_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { url?: string; category?: string; dryRun?: boolean };
+  let body: { url?: string; category?: string; dryRun?: boolean; manualTitle?: string; manualCaption?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { url, category, dryRun = false } = body;
+  const { url, category, dryRun = false, manualTitle, manualCaption } = body;
   if (!url) return NextResponse.json({ error: "url is required" }, { status: 400 });
 
   try {
-    // 1. Scrape the URL
-    const scraped = await scrapeUrl(url);
+    let article: Article;
 
-    if (!scraped.title) {
-      return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
+    if (/instagram\.com/.test(url) && manualTitle && manualCaption) {
+      // Instagram: use manually provided content
+      article = {
+        id: createHash("sha256").update(url).digest("hex").slice(0, 16),
+        title: manualTitle,
+        url,
+        imageUrl: "",
+        summary: manualCaption,
+        fullBody: manualCaption,
+        sourceName: "Instagram",
+        category: category || "CELEBRITY",
+        publishedAt: new Date(),
+      };
+    } else {
+      // All other URLs: scrape normally
+      const scraped = await scrapeUrl(url);
+      if (!scraped.title) {
+        return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
+      }
+      article = {
+        id: createHash("sha256").update(url).digest("hex").slice(0, 16),
+        title: scraped.title,
+        url: scraped.sourceUrl,
+        imageUrl: scraped.imageUrl || scraped.videoThumbnailUrl || "",
+        summary: scraped.description,
+        fullBody: scraped.description,
+        sourceName: scraped.sourceName,
+        category: category || typeToCategory(scraped.type, scraped.title),
+        publishedAt: new Date(),
+      };
     }
 
-    // 2. Build an Article object from scraped content
-    const article: Article = {
-      id: createHash("sha256").update(url).digest("hex").slice(0, 16),
-      title: scraped.title,
-      url: scraped.sourceUrl,
-      imageUrl: scraped.imageUrl || scraped.videoThumbnailUrl || "",
-      summary: scraped.description,
-      fullBody: scraped.description,
-      sourceName: scraped.sourceName,
-      category: category || typeToCategory(scraped.type, scraped.title),
-      publishedAt: new Date(),
-    };
-
-    // 3. Generate AI clickbait title + caption
     const ai = await generateAIContent(article);
-
-    // 4. Build the branded thumbnail image
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
-    // If dry run, return preview without posting
     if (dryRun) {
-      return NextResponse.json({
-        scraped,
-        article,
-        ai,
-        imageBase64: imageBuffer.toString("base64"),
-        message: "Dry run — not posted",
-      });
+      return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run — not posted" });
     }
 
-    // 5. Post to FB + IG
     const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
     const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
     const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
         title: ai.clickbaitTitle,
         url: article.url,
         category: article.category,
-        sourceType: scraped.type,
+        sourceType: /instagram\.com/.test(url) ? "instagram" : "article",
         instagram: result.instagram,
         facebook: result.facebook,
         postedAt: new Date().toISOString(),
@@ -110,7 +111,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: anySuccess,
-      scraped: { type: scraped.type, title: scraped.title, sourceName: scraped.sourceName },
       ai: { clickbaitTitle: ai.clickbaitTitle },
       instagram: result.instagram,
       facebook: result.facebook,
