@@ -206,7 +206,7 @@ async function getTrendingTopics(): Promise<string[]> {
 }
 
 async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
-  await markSeen(article.id);
+  // Note: markSeen is called BEFORE this function to prevent race conditions
 
   // Parallel: generate AI content + image at the same time
   const ai = await generateAIContent(article);
@@ -260,8 +260,8 @@ export async function POST(req: NextRequest) {
 
   // ── Daily cap check ───────────────────────────────────────────────────────
   const dailyCount = await getDailyCount();
-  if (dailyCount >= 8) {
-    return NextResponse.json({ ...response, message: "Daily cap reached (8 posts/day)" });
+  if (dailyCount >= 6) {
+    return NextResponse.json({ ...response, message: "Daily cap reached (6 posts/day)" });
   }
 
   try {
@@ -298,9 +298,15 @@ export async function POST(req: NextRequest) {
       .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
       .sort((a, b) => b.score - a.score);
 
-    // 6. Post up to 2 articles (respecting daily cap)
-    const remaining = 8 - dailyCount;
-    const toPost = scored.slice(0, Math.min(2, remaining)).map(s => s.article);
+    // 6. Post exactly 1 article per run (prevents race condition duplicates)
+    const remaining = 6 - dailyCount;
+    const toPost = scored.slice(0, Math.min(1, remaining)).map(s => s.article);
+
+    // CRITICAL: Mark all selected articles as seen IMMEDIATELY before posting
+    // This prevents concurrent cron runs from picking the same articles
+    if (toPost.length > 0) {
+      await Promise.all(toPost.map(a => markSeen(a.id)));
+    }
 
     for (const article of toPost) {
       try {
