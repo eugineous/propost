@@ -1,4 +1,4 @@
-import { SocialPost, PublishResult } from "./types";
+﻿import { SocialPost, PublishResult } from "./types";
 
 const GRAPH_API = "https://graph.facebook.com/v19.0";
 
@@ -50,13 +50,14 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
       if (err.message.includes("failed:")) throw err;
     }
   }
-  console.warn("[ig] container polling timed out — attempting publish anyway");
+  console.warn("[ig] container polling timed out â€” attempting publish anyway");
 }
 
-// ── Video posting to Instagram ───────────────────────────────────────────────
+// â”€â”€ Video posting to Instagram â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function publishVideoToInstagram(
   post: SocialPost,
-  videoUrl: string
+  videoUrl: string,
+  coverUrl?: string
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
@@ -73,6 +74,7 @@ async function publishVideoToInstagram(
           video_url: videoUrl,
           caption: post.caption,
           share_to_feed: true,
+          ...(coverUrl ? { cover_url: coverUrl } : {}),
           access_token: token,
         }),
       })
@@ -100,7 +102,7 @@ async function publishVideoToInstagram(
   }
 }
 
-// ── Video posting to Facebook ────────────────────────────────────────────────
+// â”€â”€ Video posting to Facebook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function publishVideoToFacebook(
   post: SocialPost,
   videoUrl: string
@@ -110,7 +112,7 @@ async function publishVideoToFacebook(
   if (!token || !pageId) return { success: false, error: "Facebook tokens not configured" };
 
   try {
-    const fbCaption = post.articleUrl ? post.caption + "\n\n🔗 " + post.articleUrl : post.caption;
+    const fbCaption = post.articleUrl ? post.caption + "\n\nðŸ”— " + post.articleUrl : post.caption;
     const res = await withRetry(() =>
       fetch(`${GRAPH_API}/${pageId}/videos`, {
         method: "POST",
@@ -131,7 +133,7 @@ async function publishVideoToFacebook(
   }
 }
 
-// ── Image posting to Instagram ───────────────────────────────────────────────
+// â”€â”€ Image posting to Instagram â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
@@ -176,7 +178,7 @@ async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promis
   }
 }
 
-// ── Image posting to Facebook ────────────────────────────────────────────────
+// â”€â”€ Image posting to Facebook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function publishToFacebook(post: SocialPost, imageBuffer: Buffer): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.FACEBOOK_ACCESS_TOKEN;
   const pageId = process.env.FACEBOOK_PAGE_ID;
@@ -189,7 +191,7 @@ async function publishToFacebook(post: SocialPost, imageBuffer: Buffer): Promise
     );
     const form = new FormData();
     form.append("source", blob, "image.jpg");
-    const fbCaption = post.articleUrl ? post.caption + "\n\n🔗 " + post.articleUrl : post.caption;
+    const fbCaption = post.articleUrl ? post.caption + "\n\nðŸ”— " + post.articleUrl : post.caption;
     form.append("caption", fbCaption);
     form.append("access_token", token);
     const res = await withRetry(() => fetch(`${GRAPH_API}/${pageId}/photos`, { method: "POST", body: form }));
@@ -205,12 +207,13 @@ async function publishToFacebook(post: SocialPost, imageBuffer: Buffer): Promise
 export async function publish(
   posts: { ig?: SocialPost; fb?: SocialPost },
   imageBuffer: Buffer,
-  videoUrl?: string
+  videoUrl?: string,
+  coverImageUrl?: string
 ): Promise<PublishResult> {
   if (videoUrl) {
     // Post as actual video to both platforms
     const [instagram, facebook] = await Promise.all([
-      posts.ig ? publishVideoToInstagram(posts.ig, videoUrl) : Promise.resolve({ success: false, error: "skipped" }),
+      posts.ig ? publishVideoToInstagram(posts.ig, videoUrl, coverImageUrl) : Promise.resolve({ success: false, error: "skipped" }),
       posts.fb ? publishVideoToFacebook(posts.fb, videoUrl) : Promise.resolve({ success: false, error: "skipped" }),
     ]);
     return { instagram, facebook };
@@ -222,3 +225,4 @@ export async function publish(
   ]);
   return { instagram, facebook };
 }
+
