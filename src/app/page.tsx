@@ -178,7 +178,7 @@ export default function Home() {
           {/* Desktop header */}
           <div className="desk-header" style={{display:"none",alignItems:"center",justifyContent:"space-between",marginBottom:28,paddingBottom:20,borderBottom:"1px solid #111"}}>
             <div>
-              <h1 style={{fontSize:18,fontWeight:800,letterSpacing:.3,margin:0}}>{tab==="post"?"Post":"Feed"===tab?"Feed":"Stats"}</h1>
+              <h1 style={{fontSize:18,fontWeight:800,letterSpacing:.3,margin:0}}>{tab==="post"?"Post":tab==="log"?"Feed":"Stats"}</h1>
               <div style={{fontSize:11,color:"#444",marginTop:3,letterSpacing:.5}}>PPP TV Kenya · Auto Poster</div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -311,7 +311,7 @@ export default function Home() {
                   const igR=retries[igKey], fbR=retries[fbKey];
                   return(
                     <div key={entry.articleId} className="card" style={{padding:"14px 16px"}}>
-                      <div style={{fontSize:13,fontWeight:700,lineHeight:1.4,marginBottom:8,fontFamily:"'Bebas Neue',sans-serif",letterSpacing:.5,fontSize:15}}>{entry.title}</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:15,fontWeight:700,lineHeight:1.4,marginBottom:8,letterSpacing:.5}}>{entry.title}</div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
                         <span className="tag" style={{background:"#FF007A",color:"#fff"}}>{entry.category}</span>
                         {entry.isBreaking&&<span className="tag" style={{background:"#E50914",color:"#fff"}}>BREAKING</span>}
