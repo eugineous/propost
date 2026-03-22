@@ -1,10 +1,16 @@
-{
+﻿{
   "functions": {
-    "src/app/api/automate/route.ts": {
-      "maxDuration": 300
+    "src/app/api/automate/route.ts": { "maxDuration": 300 },
+    "src/app/api/preview-image/route.ts": { "maxDuration": 30 }
+  },
+  "headers": [
+    {
+      "source": "/_next/static/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     },
-    "src/app/api/preview-image/route.ts": {
-      "maxDuration": 30
+    {
+      "source": "/(.*\\.png|.*\\.ico|.*\\.svg|.*\\.webp)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     }
-  }
+  ]
 }
