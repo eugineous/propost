@@ -1,169 +1,376 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-const RED="#E50914",PINK="#FF007A",BLACK="#141414",DARK="#1f1f1f",BORDER="#333",MUTED="#808080",WHITE="#fff",GREEN="#46d369",WARN="#f87171";
-interface PLE{articleId:string;title:string;url:string;category:string;sourceType?:string;manualPost?:boolean;instagram:{success:boolean;postId?:string;error?:string};facebook:{success:boolean;postId?:string;error?:string};postedAt:string;isBreaking?:boolean;}
-interface RS{loading:boolean;done?:boolean;error?:string;}
-interface UP{scraped:{type:string;title:string;description:string;imageUrl:string;sourceName:string};ai:{clickbaitTitle:string;caption:string};category:string;imageBase64:string;}
-const CATS=["AUTO","CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","AWARDS","EAST AFRICA","GENERAL"];
-export default function Home(){
-  const[tab,setTab]=useState<"post"|"log"|"stats">("post");
-  const[postLog,setPostLog]=useState<PLE[]>([]);
-  const[logLoading,setLogLoading]=useState(true);
-  const[urlInput,setUrlInput]=useState("");
-  const[urlCat,setUrlCat]=useState("AUTO");
-  const[preview,setPreview]=useState<UP|null>(null);
-  const[urlLoading,setUrlLoading]=useState(false);
-  const[urlPosting,setUrlPosting]=useState(false);
-  const[urlError,setUrlError]=useState<string|null>(null);
-  const[urlSuccess,setUrlSuccess]=useState<string|null>(null);
-  const[lightbox,setLightbox]=useState(false);
-  const[retries,setRetries]=useState<Record<string,RS>>({});
-  const inputRef=useRef<HTMLInputElement>(null);
-  useEffect(()=>{fetchLog();const t=setInterval(fetchLog,60000);return()=>clearInterval(t);},[]);
-  async function fetchLog(){try{const r=await fetch("/api/post-log");if(r.ok){const d=await r.json();setPostLog(d.log||[]);}}catch{}finally{setLogLoading(false);}}
-  function ago(iso:string){const m=Math.floor((Date.now()-new Date(iso).getTime())/60000);if(m<1)return"now";if(m<60)return m+"m";const h=Math.floor(m/60);if(h<24)return h+"h";return Math.floor(h/24)+"d";}
-  async function doPreview(){if(!urlInput.trim())return;setUrlLoading(true);setUrlError(null);setPreview(null);setUrlSuccess(null);try{const r=await fetch("/api/preview-url",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:urlInput.trim(),category:urlCat==="AUTO"?undefined:urlCat})});const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Preview failed");setPreview(d);}catch(e:any){setUrlError(e.message);}finally{setUrlLoading(false);}}
-  async function doPost(){if(!preview)return;setUrlPosting(true);setUrlError(null);setUrlSuccess(null);try{const r=await fetch("/api/post-from-url-proxy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:urlInput.trim(),category:urlCat==="AUTO"?undefined:urlCat})});const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||"Post failed");const ig=d.instagram?.success,fb=d.facebook?.success;setUrlSuccess((ig&&fb)?"Posted to IG + FB":ig?"IG only":fb?"FB only":"Failed");if(ig||fb){setUrlInput("");setPreview(null);setTimeout(fetchLog,2000);}}catch(e:any){setUrlError(e.message);}finally{setUrlPosting(false);}}
-  async function doRetry(entry:PLE,platform:"instagram"|"facebook"){const key=entry.articleId+"_"+platform;setRetries(s=>({...s,[key]:{loading:true}}));try{const r=await fetch("/api/retry-post",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({articleId:entry.articleId,title:entry.title,caption:entry.title,articleUrl:entry.url,category:entry.category,platform})});const d=await r.json();const ok=platform==="instagram"?d.instagram?.success:d.facebook?.success;setRetries(s=>({...s,[key]:{loading:false,done:ok,error:ok?undefined:(d.error||"Failed")}}));if(ok)setTimeout(fetchLog,1500);}catch(e:any){setRetries(s=>({...s,[key]:{loading:false,error:e.message}}));}}
-  const todayCount=postLog.filter(p=>new Date(p.postedAt).toDateString()===new Date().toDateString()).length;
-  const B=(a=true,f=false):React.CSSProperties=>({width:f?"100%":"auto",background:a?RED:"rgba(255,255,255,0.08)",color:WHITE,border:"none",borderRadius:8,padding:f?"15px 0":"10px 20px",fontWeight:800,fontSize:15,letterSpacing:1,textTransform:"uppercase",cursor:a?"pointer":"not-allowed",opacity:a?1:0.4,boxShadow:a?"0 4px 24px rgba(229,9,20,0.35)":"none"});
-  return(
-    <div style={{minHeight:"100dvh",background:BLACK,color:WHITE,fontFamily:"Inter,-apple-system,sans-serif",paddingBottom:80,maxWidth:480,margin:"0 auto"}}>
-      <header style={{position:"sticky",top:0,zIndex:100,background:"rgba(20,20,20,0.96)",backdropFilter:"blur(16px)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid "+BORDER}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontFamily:"Bebas Neue,sans-serif",fontSize:28,letterSpacing:2}}>PPP<span style={{color:RED}}>TV</span></span>
-          <span style={{fontSize:9,color:PINK,fontWeight:800,letterSpacing:3,textTransform:"uppercase"}}>Auto Poster</span>
+import { useState, useEffect, useRef, useCallback } from "react";
+
+const RED    = "#E50914";
+const PINK   = "#FF007A";
+const BLACK  = "#141414";
+const DARK   = "#1f1f1f";
+const CARD   = "#2a2a2a";
+const BORDER = "#333333";
+const MUTED  = "#808080";
+const WHITE  = "#ffffff";
+const GREEN  = "#46d369";
+const WARN   = "#f87171";
+
+interface PostLogEntry {
+  articleId: string; title: string; url: string; category: string;
+  sourceType?: string; manualPost?: boolean;
+  instagram: { success: boolean; postId?: string; error?: string };
+  facebook:  { success: boolean; postId?: string; error?: string };
+  postedAt: string; isBreaking?: boolean;
+}
+interface RetryState { loading: boolean; done?: boolean; error?: string; }
+interface UrlPreview {
+  scraped: { type: string; title: string; description: string; imageUrl: string; sourceName: string };
+  ai: { clickbaitTitle: string; caption: string };
+  category: string; imageBase64: string;
+}
+
+const CATS = ["AUTO","CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","AWARDS","EAST AFRICA","GENERAL"];
+const TYPE_LABEL: Record<string,string> = {
+  youtube:"▶ YouTube", tiktok:"♪ TikTok", twitter:"𝕏 Twitter",
+  instagram:"◎ IG", article:"📰 Article", unknown:"🔗 Link",
+};
+
+function ago(iso: string) {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return "now"; if (m < 60) return m+"m";
+  const h = Math.floor(m/60); if (h < 24) return h+"h";
+  return Math.floor(h/24)+"d";
+}
+
+export default function Home() {
+  const [tab, setTab]               = useState<"post"|"log"|"stats">("post");
+  const [postLog, setPostLog]       = useState<PostLogEntry[]>([]);
+  const [logLoading, setLogLoading] = useState(true);
+  const [urlInput, setUrlInput]     = useState("");
+  const [urlCat, setUrlCat]         = useState("AUTO");
+  const [preview, setPreview]       = useState<UrlPreview|null>(null);
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [urlPosting, setUrlPosting] = useState(false);
+  const [urlError, setUrlError]     = useState<string|null>(null);
+  const [urlSuccess, setUrlSuccess] = useState<string|null>(null);
+  const [lightbox, setLightbox]     = useState(false);
+  const [retries, setRetries]       = useState<Record<string,RetryState>>({});
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const fetchLog = useCallback(async () => {
+    try {
+      const r = await fetch("/api/post-log");
+      if (r.ok) { const d = await r.json(); setPostLog(d.log || []); }
+    } catch {}
+    finally { setLogLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchLog();
+    const t = setInterval(fetchLog, 60000);
+    return () => clearInterval(t);
+  }, [fetchLog]);
+
+  async function doPreview() {
+    if (!urlInput.trim()) return;
+    setUrlLoading(true); setUrlError(null); setPreview(null); setUrlSuccess(null);
+    try {
+      const r = await fetch("/api/preview-url", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ url:urlInput.trim(), category: urlCat==="AUTO"?undefined:urlCat }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error||"Preview failed");
+      setPreview(d);
+    } catch(e:any) { setUrlError(e.message); }
+    finally { setUrlLoading(false); }
+  }
+
+  async function doPost() {
+    if (!preview) return;
+    setUrlPosting(true); setUrlError(null); setUrlSuccess(null);
+    try {
+      const r = await fetch("/api/post-from-url-proxy", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ url:urlInput.trim(), category: urlCat==="AUTO"?undefined:urlCat }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error||"Post failed");
+      const ig = d.instagram?.success, fb = d.facebook?.success;
+      setUrlSuccess((ig&&fb)?"✅ Posted to IG + FB":ig?"✅ Posted to IG only":fb?"✅ Posted to FB only":"❌ Failed on both");
+      if (ig||fb) { setUrlInput(""); setPreview(null); setTimeout(fetchLog,2000); }
+    } catch(e:any) { setUrlError(e.message); }
+    finally { setUrlPosting(false); }
+  }
+
+  async function doRetry(entry: PostLogEntry, platform: "instagram"|"facebook") {
+    const key = entry.articleId+"_"+platform;
+    setRetries(s=>({...s,[key]:{loading:true}}));
+    try {
+      const r = await fetch("/api/retry-post", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ articleId:entry.articleId, title:entry.title, caption:entry.title, articleUrl:entry.url, category:entry.category, platform }),
+      });
+      const d = await r.json();
+      const ok = platform==="instagram"?d.instagram?.success:d.facebook?.success;
+      setRetries(s=>({...s,[key]:{loading:false,done:ok,error:ok?undefined:(d.error||"Failed")}}));
+      if (ok) setTimeout(fetchLog,1500);
+    } catch(e:any) { setRetries(s=>({...s,[key]:{loading:false,error:e.message}})); }
+  }
+
+  const todayCount  = postLog.filter(p=>new Date(p.postedAt).toDateString()===new Date().toDateString()).length;
+  const successCount = postLog.filter(p=>p.instagram.success||p.facebook.success).length;
+  const catCounts   = CATS.reduce((acc,c)=>({...acc,[c]:postLog.filter(p=>p.category===c).length}),{} as Record<string,number>);
+  const maxCat      = Math.max(1,...Object.values(catCounts));
+
+  // ── Styles ──────────────────────────────────────────────────────────────────
+  const S = {
+    shell:   { minHeight:"100dvh", maxWidth:480, margin:"0 auto", background:BLACK, color:WHITE, fontFamily:"'Inter',system-ui,sans-serif", display:"flex", flexDirection:"column" as const, position:"relative" as const },
+    header:  { background:DARK, borderBottom:`1px solid ${BORDER}`, padding:"14px 16px 10px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky" as const, top:0, zIndex:50 },
+    logo:    { display:"flex", alignItems:"center", gap:6 },
+    dot:     { width:8, height:8, borderRadius:"50%", background:RED, animation:"pulse 1.5s infinite" },
+    live:    { fontSize:11, color:MUTED, letterSpacing:1 },
+    brand:   { fontSize:20, fontWeight:800, letterSpacing:1 },
+    brandPink:{ color:PINK },
+    scroll:  { flex:1, overflowY:"auto" as const, paddingBottom:80 },
+    nav:     { position:"fixed" as const, bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:DARK, borderTop:`1px solid ${BORDER}`, display:"flex", zIndex:50 },
+    navBtn:  (active:boolean)=>({ flex:1, padding:"12px 0 10px", background:"none", border:"none", color:active?WHITE:MUTED, fontSize:11, fontWeight:active?700:400, cursor:"pointer", display:"flex", flexDirection:"column" as const, alignItems:"center", gap:3, borderTop:active?`2px solid ${RED}`:"2px solid transparent" }),
+    section: { padding:"16px 16px 0" },
+    label:   { fontSize:11, color:MUTED, letterSpacing:1, marginBottom:6, textTransform:"uppercase" as const },
+    input:   { width:"100%", background:CARD, border:`1px solid ${BORDER}`, borderRadius:8, padding:"12px 14px", color:WHITE, fontSize:15, outline:"none", boxSizing:"border-box" as const },
+    btn:     (color:string,disabled?:boolean)=>({ background:disabled?"#333":color, color:WHITE, border:"none", borderRadius:8, padding:"13px 0", fontSize:15, fontWeight:700, cursor:disabled?"not-allowed":"pointer", width:"100%", opacity:disabled?0.6:1 }),
+    pills:   { display:"flex", gap:6, flexWrap:"wrap" as const, marginBottom:12 },
+    pill:    (active:boolean)=>({ background:active?PINK:"#333", color:WHITE, border:"none", borderRadius:20, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:active?700:400 }),
+    card:    { background:CARD, borderRadius:10, overflow:"hidden", marginBottom:12 },
+    cardImg: { width:"100%", aspectRatio:"16/9", objectFit:"cover" as const, display:"block" },
+    cardBody:{ padding:"12px 14px" },
+    cardTitle:{ fontSize:15, fontWeight:700, lineHeight:1.3, marginBottom:6 },
+    cardMeta:{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" as const },
+    badge:   (color:string)=>({ background:color, color:WHITE, borderRadius:4, padding:"2px 7px", fontSize:11, fontWeight:700 }),
+    retryBtn:(ok?:boolean,loading?:boolean)=>({ background:ok?GREEN:loading?"#555":WARN, color:WHITE, border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:loading?"not-allowed":"pointer", fontWeight:700 }),
+    statCard:{ background:CARD, borderRadius:10, padding:"16px", marginBottom:12, display:"flex", flexDirection:"column" as const, gap:4 },
+    bigNum:  { fontSize:42, fontWeight:800, lineHeight:1 },
+    statLbl: { fontSize:12, color:MUTED },
+    barRow:  { display:"flex", alignItems:"center", gap:8, marginBottom:8 },
+    barLabel:{ fontSize:11, color:MUTED, width:80, flexShrink:0 },
+    barTrack:{ flex:1, background:"#333", borderRadius:4, height:8 },
+    barFill: (pct:number)=>({ width:`${pct}%`, background:PINK, borderRadius:4, height:8, transition:"width 0.4s" }),
+    barCount:{ fontSize:11, color:MUTED, width:20, textAlign:"right" as const },
+    err:     { background:"#3a0000", border:`1px solid ${WARN}`, borderRadius:8, padding:"10px 14px", color:WARN, fontSize:13, marginTop:10 },
+    ok:      { background:"#003a10", border:`1px solid ${GREEN}`, borderRadius:8, padding:"10px 14px", color:GREEN, fontSize:13, marginTop:10 },
+    divider: { height:1, background:BORDER, margin:"16px 0" },
+    row2:    { display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:12 },
+  };
+
+  // ── Tab: Post ────────────────────────────────────────────────────────────────
+  const PostTab = (
+    <div style={S.scroll}>
+      <div style={S.section}>
+        <div style={S.label}>Post from URL</div>
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <input ref={inputRef} style={{...S.input,flex:1}} placeholder="Paste article / YouTube / TikTok URL…"
+            value={urlInput} onChange={e=>setUrlInput(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&!preview&&doPreview()} />
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:11,color:MUTED}}>{todayCount}/8</span>
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
-            <div style={{width:7,height:7,borderRadius:"50%",background:GREEN,boxShadow:"0 0 8px "+GREEN}}/>
-            <span style={{fontSize:11,color:MUTED}}>Live</span>
-          </div>
+        <div style={S.label}>Category</div>
+        <div style={S.pills}>
+          {CATS.map(c=>(
+            <button key={c} style={S.pill(urlCat===c)} onClick={()=>setUrlCat(c)}>{c}</button>
+          ))}
         </div>
-      </header>
-      <div style={{position:"relative",height:120,background:"linear-gradient(160deg,#0d0d0d,#1a0008,#0d0d0d)",display:"flex",alignItems:"flex-end",overflow:"hidden"}}>
-        <div style={{position:"relative",zIndex:2,padding:"0 20px 16px"}}>
-          <div style={{fontSize:9,color:RED,fontWeight:800,letterSpacing:4,textTransform:"uppercase",marginBottom:4}}>PPP TV Kenya</div>
-          <h1 style={{fontFamily:"Bebas Neue,sans-serif",fontSize:34,lineHeight:0.95,letterSpacing:1,margin:0}}>POST FROM <span style={{color:RED}}>ANY URL</span></h1>
-        </div>
-      </div>
-      <div style={{padding:"0 16px"}}>
-        {tab==="post"&&(
-          <div style={{paddingTop:20}}>
-            <input ref={inputRef} value={urlInput} onChange={e=>{setUrlInput(e.target.value);setPreview(null);setUrlError(null);setUrlSuccess(null);}} onKeyDown={e=>e.key==="Enter"&&doPreview()} placeholder="Paste URL here..." style={{width:"100%",boxSizing:"border-box",background:DARK,border:"1px solid "+BORDER,borderRadius:8,padding:"14px 16px",color:WHITE,fontSize:15,outline:"none",fontFamily:"inherit",marginBottom:12}}/>
-            <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:10,marginBottom:14}}>
-              {CATS.map(c=>(<button key={c} onClick={()=>setUrlCat(c)} style={{flexShrink:0,background:urlCat===c?RED:"rgba(255,255,255,0.07)",color:urlCat===c?WHITE:MUTED,border:"none",borderRadius:20,padding:"7px 14px",fontSize:11,fontWeight:700,cursor:"pointer",textTransform:"uppercase",whiteSpace:"nowrap"}}>{c}</button>))}
-            </div>
-            <button onClick={doPreview} disabled={urlLoading||!urlInput.trim()} style={B(!urlLoading&&!!urlInput.trim(),true)}>{urlLoading?"Scraping...":"Preview"}</button>
-            {urlError&&<div style={{marginTop:12,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,padding:"12px 14px",color:WARN,fontSize:13}}>{urlError}</div>}
-            {urlSuccess&&<div style={{marginTop:12,background:"rgba(70,211,105,0.1)",border:"1px solid rgba(70,211,105,0.3)",borderRadius:8,padding:"12px 14px",color:GREEN,fontSize:13}}>{urlSuccess}</div>}
-            {preview&&(
-              <div style={{marginTop:20,background:DARK,borderRadius:12,overflow:"hidden",border:"1px solid "+BORDER}}>
-                <div onClick={()=>setLightbox(true)} style={{position:"relative",cursor:"zoom-in"}}>
-                  <img src={"data:image/jpeg;base64,"+preview.imageBase64} alt="Preview" style={{width:"100%",display:"block",aspectRatio:"4/5",objectFit:"cover"}}/>
-                  <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,transparent 45%,rgba(0,0,0,0.92) 100%)"}}/>
-                  <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"16px"}}>
-                    <div style={{display:"flex",gap:6,marginBottom:8}}>
-                      <span style={{background:"rgba(229,9,20,0.25)",color:RED,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{preview.scraped.type}</span>
-                      <span style={{background:"rgba(255,255,255,0.1)",color:MUTED,fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20}}>{preview.category}</span>
-                    </div>
-                    <div style={{fontFamily:"Bebas Neue,sans-serif",fontSize:22,lineHeight:1.1}}>{preview.ai.clickbaitTitle}</div>
-                  </div>
-                </div>
-                <div style={{padding:"16px"}}>
-                  <div style={{fontSize:9,color:MUTED,letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Caption</div>
-                  <div style={{fontSize:12,color:"rgba(255,255,255,0.7)",lineHeight:1.65,maxHeight:90,overflow:"hidden"}}>{preview.ai.caption.slice(0,260)}</div>
-                  <div style={{fontSize:10,color:MUTED,marginTop:10,paddingTop:10,borderTop:"1px solid "+BORDER}}>Source: {preview.scraped.sourceName}</div>
-                </div>
-                <div style={{padding:"0 16px 16px"}}>
-                  <button onClick={doPost} disabled={urlPosting} style={B(!urlPosting,true)}>{urlPosting?"Posting...":"Post to IG + FB"}</button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        {tab==="log"&&(
-          <div style={{paddingTop:20}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
-              <span style={{fontSize:16,fontWeight:700}}>Recent Posts</span>
-              <button onClick={fetchLog} style={{background:"none",border:"none",color:MUTED,fontSize:12,cursor:"pointer"}}>Refresh</button>
-            </div>
-            {logLoading?<div style={{color:MUTED,textAlign:"center",padding:"40px 0"}}>Loading...</div>:postLog.length===0?<div style={{background:DARK,borderRadius:10,padding:"32px 20px",color:MUTED,fontSize:13,textAlign:"center"}}>No posts yet</div>:(
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {postLog.slice(0,25).map((entry,i)=>{
-                  const igR=retries[entry.articleId+"_instagram"],fbR=retries[entry.articleId+"_facebook"];
-                  return(
-                    <div key={i} style={{background:DARK,borderRadius:10,padding:"14px 16px",border:"1px solid "+BORDER}}>
-                      <div style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:10}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:600,lineHeight:1.3,marginBottom:5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{entry.title}</div>
-                          <div style={{display:"flex",gap:6}}>
-                            <span style={{background:entry.manualPost?"rgba(255,0,122,0.2)":"rgba(229,9,20,0.2)",color:entry.manualPost?PINK:RED,fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:10}}>{entry.manualPost?"MANUAL":"AUTO"}</span>
-                            <span style={{fontSize:10,color:MUTED}}>{entry.category}</span>
-                          </div>
-                        </div>
-                        <span style={{fontSize:10,color:MUTED,whiteSpace:"nowrap"}}>{ago(entry.postedAt)}</span>
-                      </div>
-                      <div style={{display:"flex",gap:8}}>
-                        <div style={{flex:1,background:"rgba(255,255,255,0.04)",borderRadius:6,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                          <span style={{fontSize:10,color:MUTED,fontWeight:700}}>IG</span>
-                          {entry.instagram.success||(igR?.done)?<span style={{fontSize:11,color:GREEN,fontWeight:700}}>Done</span>:
-                            <button onClick={()=>doRetry(entry,"instagram")} disabled={igR?.loading} style={{background:igR?.loading?"rgba(255,255,255,0.08)":RED,color:WHITE,border:"none",borderRadius:4,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:igR?.loading?"not-allowed":"pointer",opacity:igR?.loading?0.5:1}}>{igR?.loading?"...":"Publish"}</button>
-                          }
-                        </div>
-                        <div style={{flex:1,background:"rgba(255,255,255,0.04)",borderRadius:6,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                          <span style={{fontSize:10,color:MUTED,fontWeight:700}}>FB</span>
-                          {entry.facebook.success||(fbR?.done)?<span style={{fontSize:11,color:GREEN,fontWeight:700}}>Done</span>:
-                            <button onClick={()=>doRetry(entry,"facebook")} disabled={fbR?.loading} style={{background:fbR?.loading?"rgba(255,255,255,0.08)":RED,color:WHITE,border:"none",borderRadius:4,padding:"4px 10px",fontSize:10,fontWeight:700,cursor:fbR?.loading?"not-allowed":"pointer",opacity:fbR?.loading?0.5:1}}>{fbR?.loading?"...":"Publish"}</button>
-                          }
-                        </div>
-                        <a href={entry.url} target="_blank" rel="noreferrer" style={{color:MUTED,fontSize:20,textDecoration:"none",display:"flex",alignItems:"center"}}>&#8599;</a>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-        {tab==="stats"&&(
-          <div style={{paddingTop:20}}>
-            <div style={{fontSize:16,fontWeight:700,marginBottom:14}}>Stats</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-              {[{l:"Today",v:todayCount+"/8",s:"posts"},{l:"Total",v:String(postLog.length),s:"all time"},{l:"Success",v:postLog.length?Math.round(postLog.filter(p=>p.instagram.success||p.facebook.success).length/postLog.length*100)+"%":"--",s:"rate"},{l:"Manual",v:String(postLog.filter(p=>p.manualPost).length),s:"posts"}].map(s=>(
-                <div key={s.l} style={{background:DARK,borderRadius:10,padding:"18px 16px",border:"1px solid "+BORDER}}>
-                  <div style={{fontSize:9,color:MUTED,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{s.l}</div>
-                  <div style={{fontSize:30,fontWeight:900,lineHeight:1}}>{s.v}</div>
-                  <div style={{fontSize:10,color:MUTED,marginTop:4}}>{s.s}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{background:DARK,borderRadius:10,padding:"16px",border:"1px solid "+BORDER}}>
-              <div style={{fontSize:12,fontWeight:700,marginBottom:12}}>Config</div>
-              {[{k:"Source",v:"ppptv-v2.vercel.app"},{k:"Image",v:"1080x1350"},{k:"Cron",v:"Every 30 min"},{k:"Hours",v:"6am-11pm EAT"},{k:"Cap",v:"8/day"},{k:"AI",v:"Gemini 1.5 Flash"},{k:"Dedup",v:"Cloudflare KV"}].map(r=>(
-                <div key={r.k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-                  <span style={{fontSize:12,color:MUTED}}>{r.k}</span>
-                  <span style={{fontSize:12,fontWeight:600}}>{r.v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <nav style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"rgba(20,20,20,0.97)",backdropFilter:"blur(20px)",borderTop:"1px solid "+BORDER,display:"flex",zIndex:200,paddingBottom:"env(safe-area-inset-bottom,0px)"}}>
-        {([{id:"post" as const,icon:"+",label:"Post"},{id:"log" as const,icon:"=",label:"Feed"},{id:"stats" as const,icon:"o",label:"Stats"}]).map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:"none",border:"none",padding:"12px 0 10px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",color:tab===t.id?RED:MUTED}}>
-            <span style={{fontSize:22,lineHeight:1}}>{t.icon}</span>
-            <span style={{fontSize:9,fontWeight:700,letterSpacing:1,textTransform:"uppercase"}}>{t.label}</span>
+        {!preview && (
+          <button style={S.btn(RED, urlLoading||!urlInput.trim())} onClick={doPreview} disabled={urlLoading||!urlInput.trim()}>
+            {urlLoading?"⏳ Fetching preview…":"🔍 Preview"}
           </button>
-        ))}
-      </nav>
-      {lightbox&&preview&&(
-        <div onClick={()=>setLightbox(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.97)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,cursor:"zoom-out",padding:16}}>
-          <img src={"data:image/jpeg;base64,"+preview.imageBase64} alt="Full" style={{maxWidth:"100%",maxHeight:"90dvh",borderRadius:8,objectFit:"contain"}}/>
+        )}
+        {urlError && <div style={S.err}>⚠ {urlError}</div>}
+        {urlSuccess && <div style={S.ok}>{urlSuccess}</div>}
+      </div>
+
+      {preview && (
+        <div style={{...S.section, paddingTop:14}}>
+          <div style={S.label}>Preview</div>
+          <div style={S.card}>
+            {preview.imageBase64 && (
+              <div style={{position:"relative",cursor:"zoom-in"}} onClick={()=>setLightbox(true)}>
+                <img src={preview.imageBase64} alt="" style={S.cardImg} />
+                <div style={{position:"absolute",bottom:6,right:8,background:"rgba(0,0,0,0.6)",borderRadius:4,padding:"2px 7px",fontSize:11,color:WHITE}}>
+                  {TYPE_LABEL[preview.scraped.type]||"🔗"}
+                </div>
+              </div>
+            )}
+            <div style={S.cardBody}>
+              <div style={S.cardTitle}>{preview.ai.clickbaitTitle}</div>
+              <div style={{fontSize:12,color:MUTED,marginBottom:8,lineHeight:1.4}}>{preview.ai.caption.slice(0,120)}…</div>
+              <div style={S.cardMeta}>
+                <span style={S.badge(PINK)}>{preview.category}</span>
+                <span style={{fontSize:11,color:MUTED}}>{preview.scraped.sourceName}</span>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button style={{...S.btn("#444"),flex:1}} onClick={()=>{setPreview(null);setUrlSuccess(null);}}>✕ Clear</button>
+            <button style={{...S.btn(RED,urlPosting),flex:2}} onClick={doPost} disabled={urlPosting}>
+              {urlPosting?"⏳ Posting…":"📤 Post to IG + FB"}
+            </button>
+          </div>
         </div>
       )}
+
+      {lightbox && preview?.imageBase64 && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setLightbox(false)}>
+          <img src={preview.imageBase64} alt="" style={{maxWidth:"95vw",maxHeight:"90dvh",borderRadius:8,objectFit:"contain"}} />
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Tab: Log ─────────────────────────────────────────────────────────────────
+  const LogTab = (
+    <div style={S.scroll}>
+      <div style={S.section}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={S.label}>Post Log</div>
+          <button style={{background:"none",border:`1px solid ${BORDER}`,color:MUTED,borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer"}} onClick={fetchLog}>↻ Refresh</button>
+        </div>
+        {logLoading && <div style={{color:MUTED,fontSize:13,textAlign:"center",padding:24}}>Loading…</div>}
+        {!logLoading && postLog.length===0 && <div style={{color:MUTED,fontSize:13,textAlign:"center",padding:24}}>No posts yet</div>}
+        {postLog.slice().reverse().map(entry=>{
+          const igKey = entry.articleId+"_instagram";
+          const fbKey = entry.articleId+"_facebook";
+          const igR = retries[igKey], fbR = retries[fbKey];
+          return (
+            <div key={entry.articleId} style={S.card}>
+              <div style={S.cardBody}>
+                <div style={{...S.cardTitle,fontSize:13}}>{entry.title}</div>
+                <div style={{...S.cardMeta,marginBottom:8}}>
+                  <span style={S.badge(PINK)}>{entry.category}</span>
+                  {entry.isBreaking && <span style={S.badge(RED)}>BREAKING</span>}
+                  {entry.manualPost && <span style={S.badge("#555")}>MANUAL</span>}
+                  <span style={{fontSize:11,color:MUTED}}>{ago(entry.postedAt)}</span>
+                </div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap" as const}}>
+                  {/* Instagram */}
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{fontSize:11,color:MUTED}}>IG:</span>
+                    {entry.instagram.success
+                      ? <span style={{fontSize:11,color:GREEN}}>✓ {entry.instagram.postId?.slice(-6)}</span>
+                      : igR?.done
+                        ? <span style={{fontSize:11,color:GREEN}}>✓ retried</span>
+                        : <button style={S.retryBtn(false,igR?.loading)} disabled={igR?.loading} onClick={()=>doRetry(entry,"instagram")}>
+                            {igR?.loading?"…":"↺ IG"}
+                          </button>
+                    }
+                  </div>
+                  {/* Facebook */}
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{fontSize:11,color:MUTED}}>FB:</span>
+                    {entry.facebook.success
+                      ? <span style={{fontSize:11,color:GREEN}}>✓ {entry.facebook.postId?.slice(-6)}</span>
+                      : fbR?.done
+                        ? <span style={{fontSize:11,color:GREEN}}>✓ retried</span>
+                        : <button style={S.retryBtn(false,fbR?.loading)} disabled={fbR?.loading} onClick={()=>doRetry(entry,"facebook")}>
+                            {fbR?.loading?"…":"↺ FB"}
+                          </button>
+                    }
+                  </div>
+                </div>
+                {(igR?.error||fbR?.error) && <div style={{fontSize:11,color:WARN,marginTop:4}}>{igR?.error||fbR?.error}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // ── Tab: Stats ───────────────────────────────────────────────────────────────
+  const StatsTab = (
+    <div style={S.scroll}>
+      <div style={S.section}>
+        <div style={S.row2}>
+          <div style={S.statCard}>
+            <div style={{...S.bigNum,color:RED}}>{todayCount}</div>
+            <div style={S.statLbl}>Today</div>
+          </div>
+          <div style={S.statCard}>
+            <div style={{...S.bigNum,color:GREEN}}>{successCount}</div>
+            <div style={S.statLbl}>Total Success</div>
+          </div>
+          <div style={S.statCard}>
+            <div style={{...S.bigNum,color:PINK}}>{postLog.filter(p=>p.instagram.success).length}</div>
+            <div style={S.statLbl}>IG Posts</div>
+          </div>
+          <div style={S.statCard}>
+            <div style={{...S.bigNum,color:"#1877f2"}}>{postLog.filter(p=>p.facebook.success).length}</div>
+            <div style={S.statLbl}>FB Posts</div>
+          </div>
+        </div>
+
+        <div style={S.divider}/>
+        <div style={{...S.label,marginBottom:12}}>By Category</div>
+        {CATS.filter(c=>catCounts[c]>0).map(c=>(
+          <div key={c} style={S.barRow}>
+            <div style={S.barLabel}>{c.slice(0,10)}</div>
+            <div style={S.barTrack}><div style={S.barFill(Math.round(catCounts[c]/maxCat*100))}/></div>
+            <div style={S.barCount}>{catCounts[c]}</div>
+          </div>
+        ))}
+
+        <div style={S.divider}/>
+        <div style={{...S.label,marginBottom:12}}>Config</div>
+        {[
+          ["Schedule","Every 30 min"],
+          ["Peak Hours","6am – 11pm EAT"],
+          ["Daily Cap","8 posts/day"],
+          ["Max per Run","2 posts"],
+          ["Dedup","Cloudflare KV"],
+          ["Filter","Kenya only"],
+        ].map(([k,v])=>(
+          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${BORDER}`,fontSize:13}}>
+            <span style={{color:MUTED}}>{k}</span>
+            <span style={{fontWeight:600}}>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={S.shell}>
+      <style>{
+        `@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+        body{margin:0;background:${BLACK}}
+        input::placeholder{color:${MUTED}}
+        ::-webkit-scrollbar{width:0}`
+      }</style>
+
+      {/* Header */}
+      <div style={S.header}>
+        <div style={S.logo}>
+          <div style={S.dot}/>
+          <span style={S.brand}>PPP<span style={S.brandPink}>TV</span></span>
+          <span style={S.live}>LIVE</span>
+        </div>
+        <div style={{fontSize:12,color:MUTED}}>{todayCount}/8 today</div>
+      </div>
+
+      {/* Tab content */}
+      {tab==="post"  && PostTab}
+      {tab==="log"   && LogTab}
+      {tab==="stats" && StatsTab}
+
+      {/* Bottom nav */}
+      <nav style={S.nav}>
+        <button style={S.navBtn(tab==="post")}  onClick={()=>setTab("post")}>
+          <span style={{fontSize:20}}>📤</span>Post
+        </button>
+        <button style={S.navBtn(tab==="log")}   onClick={()=>setTab("log")}>
+          <span style={{fontSize:20}}>📋</span>
+          <span>Feed {postLog.length>0&&<span style={{background:RED,borderRadius:10,padding:"0 5px",fontSize:10}}>{postLog.length}</span>}</span>
+        </button>
+        <button style={S.navBtn(tab==="stats")} onClick={()=>setTab("stats")}>
+          <span style={{fontSize:20}}>📊</span>Stats
+        </button>
+      </nav>
     </div>
   );
 }
