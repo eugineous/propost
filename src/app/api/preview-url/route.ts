@@ -24,46 +24,36 @@ export async function POST(req: NextRequest) {
   const { url, category, manualTitle, manualCaption } = body;
   if (!url) return NextResponse.json({ error: "url is required" }, { status: 400 });
 
-  // Instagram blocks all server-side scraping — handle via manual input
-  if (/instagram\.com/.test(url)) {
-    if (!manualTitle || !manualCaption) {
-      return NextResponse.json({ error: "INSTAGRAM_MANUAL", message: "Instagram blocks scraping. Please enter the title and caption manually." }, { status: 422 });
+  // Instagram: needs manual input if oEmbed fails
+  if (/instagram\.com/.test(url) && !manualTitle) {
+    const scraped = await scrapeUrl(url).catch(() => null);
+    if (!scraped?.title) {
+      return NextResponse.json({
+        error: "INSTAGRAM_MANUAL",
+        message: "Instagram blocked scraping. Enter title and caption manually.",
+        videoEmbedUrl: scraped?.embedId ? `https://www.instagram.com/p/${scraped.embedId}/embed/` : null,
+      }, { status: 422 });
     }
-    // Use manual content provided by user
-    const article: Article = {
-      id: createHash("sha256").update(url).digest("hex").slice(0, 16),
-      title: manualTitle,
-      url,
-      imageUrl: "",
-      summary: manualCaption,
-      fullBody: manualCaption,
-      sourceName: "Instagram",
-      category: category || "CELEBRITY",
-      publishedAt: new Date(),
-    };
-    const ai = await generateAIContent(article);
-    const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
-    const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
-    return NextResponse.json({
-      scraped: { type: "instagram", title: manualTitle, description: manualCaption, imageUrl: "", sourceName: "Instagram" },
-      ai, category: article.category,
-      imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
-    });
   }
 
   try {
     const scraped = await scrapeUrl(url);
-    if (!scraped.title) return NextResponse.json({ error: "Could not extract content from this URL" }, { status: 422 });
+
+    // Use manual overrides if provided (Instagram fallback)
+    const title = manualTitle || scraped.title;
+    const description = manualCaption || scraped.description;
+
+    if (!title) return NextResponse.json({ error: "Could not extract content from this URL" }, { status: 422 });
 
     const article: Article = {
       id: createHash("sha256").update(url).digest("hex").slice(0, 16),
-      title: scraped.title,
+      title,
       url: scraped.sourceUrl,
       imageUrl: scraped.imageUrl || scraped.videoThumbnailUrl || "",
-      summary: scraped.description,
-      fullBody: scraped.description,
+      summary: description,
+      fullBody: description,
       sourceName: scraped.sourceName,
-      category: category || typeToCategory(scraped.type, scraped.title),
+      category: category || typeToCategory(scraped.type, title),
       publishedAt: new Date(),
     };
 
@@ -72,8 +62,18 @@ export async function POST(req: NextRequest) {
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
     return NextResponse.json({
-      scraped: { type: scraped.type, title: scraped.title, description: scraped.description, imageUrl: scraped.imageUrl, sourceName: scraped.sourceName },
-      ai, category: article.category,
+      scraped: {
+        type: scraped.type,
+        title,
+        description,
+        imageUrl: scraped.imageUrl,
+        sourceName: scraped.sourceName,
+        isVideo: scraped.isVideo,
+        videoEmbedUrl: scraped.videoEmbedUrl || null,
+        videoUrl: scraped.videoUrl || null,
+      },
+      ai,
+      category: article.category,
       imageBase64: "data:image/jpeg;base64," + imageBuffer.toString("base64"),
     });
   } catch (err: any) {

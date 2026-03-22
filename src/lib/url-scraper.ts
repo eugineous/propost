@@ -7,11 +7,13 @@ export interface ScrapedContent {
   title: string;
   description: string;
   imageUrl: string;
-  videoUrl?: string;          // direct video URL if available
-  videoThumbnailUrl?: string; // thumbnail for video posts
+  videoUrl?: string;          // public video URL for Graph API posting
+  videoEmbedUrl?: string;     // iframe embed URL for preview player
+  videoThumbnailUrl?: string;
   sourceUrl: string;
   sourceName: string;
-  embedId?: string;           // YouTube video ID, tweet ID, etc.
+  embedId?: string;
+  isVideo: boolean;
 }
 
 function extractMeta(html: string, property: string): string {
@@ -36,24 +38,13 @@ function extractTitle(html: string): string {
 }
 
 function extractDescription(html: string): string {
-  return (
-    extractMeta(html, "og:description") ||
-    extractMeta(html, "twitter:description") ||
-    extractMeta(html, "description") ||
-    ""
-  );
+  return extractMeta(html, "og:description") || extractMeta(html, "twitter:description") || extractMeta(html, "description") || "";
 }
 
 function extractImage(html: string): string {
-  return (
-    extractMeta(html, "og:image") ||
-    extractMeta(html, "twitter:image") ||
-    extractMeta(html, "twitter:image:src") ||
-    ""
-  );
+  return extractMeta(html, "og:image") || extractMeta(html, "twitter:image") || extractMeta(html, "twitter:image:src") || "";
 }
 
-// Detect URL type
 function detectType(url: string): ScrapedContent["type"] {
   if (/youtube\.com\/watch|youtu\.be\//.test(url)) return "youtube";
   if (/tiktok\.com/.test(url)) return "tiktok";
@@ -62,13 +53,11 @@ function detectType(url: string): ScrapedContent["type"] {
   return "article";
 }
 
-// Extract YouTube video ID
 function getYouTubeId(url: string): string {
   const m = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
   return m?.[1] || "";
 }
 
-// Extract tweet ID
 function getTweetId(url: string): string {
   const m = url.match(/status\/(\d+)/);
   return m?.[1] || "";
@@ -95,7 +84,6 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
     const videoId = getYouTubeId(inputUrl);
     if (!videoId) throw new Error("Could not extract YouTube video ID");
 
-    // Use YouTube oEmbed API — no auth needed
     const oembedRes = await fetch(
       `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`,
       { signal: AbortSignal.timeout(10000) }
@@ -112,59 +100,18 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       description: `Watch: ${title} — ${author}`,
       imageUrl: thumbnail,
       videoThumbnailUrl: thumbnail,
+      // YouTube embed URL for iframe player
+      videoEmbedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
+      // No direct downloadable URL — YouTube blocks it; use thumbnail for posting
+      videoUrl: undefined,
       sourceUrl: inputUrl,
       sourceName: author,
       embedId: videoId,
+      isVideo: true,
     };
   }
 
-  // ── Twitter/X ─────────────────────────────────────────────────────────────
-  if (type === "twitter") {
-    const tweetId = getTweetId(inputUrl);
-    // Use Twitter oEmbed — no auth needed
-    try {
-      const oembedRes = await fetch(
-        `https://publish.twitter.com/oembed?url=${encodeURIComponent(inputUrl)}&omit_script=true`,
-        { signal: AbortSignal.timeout(10000) }
-      );
-      if (oembedRes.ok) {
-        const oembed = await oembedRes.json() as any;
-        // Extract text from HTML
-        const text = (oembed.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-        const author = oembed.author_name || "Twitter";
-        // Try to get image from the tweet page
-        let imageUrl = "";
-        try {
-          const html = await fetchHtml(inputUrl);
-          imageUrl = extractImage(html);
-        } catch { /* no image */ }
-
-        return {
-          type: "twitter",
-          title: `${author} on X: ${text.slice(0, 100)}`,
-          description: text.slice(0, 500),
-          imageUrl,
-          sourceUrl: inputUrl,
-          sourceName: author,
-          embedId: tweetId,
-        };
-      }
-    } catch { /* fall through to generic scrape */ }
-
-    // Fallback: scrape the page
-    const html = await fetchHtml(inputUrl);
-    return {
-      type: "twitter",
-      title: extractTitle(html),
-      description: extractDescription(html),
-      imageUrl: extractImage(html),
-      sourceUrl: inputUrl,
-      sourceName: "X / Twitter",
-      embedId: tweetId,
-    };
-  }
-
-  // ── TikTok ────────────────────────────────────────────────────────────────
+  // ── TikTok ───────────────────────────────────────────────────────────────
   if (type === "tiktok") {
     try {
       const oembedRes = await fetch(
@@ -173,14 +120,20 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       );
       if (oembedRes.ok) {
         const oembed = await oembedRes.json() as any;
+        // Extract TikTok video ID for embed
+        const videoIdMatch = inputUrl.match(/video\/(\d+)/);
+        const videoId = videoIdMatch?.[1] || "";
         return {
           type: "tiktok",
           title: oembed.title || "TikTok Video",
           description: oembed.title || "",
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
+          videoEmbedUrl: videoId ? `https://www.tiktok.com/embed/v2/${videoId}` : undefined,
+          videoUrl: undefined,
           sourceUrl: inputUrl,
           sourceName: oembed.author_name || "TikTok",
+          isVideo: true,
         };
       }
     } catch { /* fall through */ }
@@ -193,16 +146,55 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
       imageUrl: extractImage(html),
       sourceUrl: inputUrl,
       sourceName: "TikTok",
+      isVideo: true,
     };
   }
 
-  // ── Instagram ──────────────────────────────────────────────────────────────
+  // ── Twitter/X ────────────────────────────────────────────────────────────
+  if (type === "twitter") {
+    const tweetId = getTweetId(inputUrl);
+    try {
+      const oembedRes = await fetch(
+        `https://publish.twitter.com/oembed?url=${encodeURIComponent(inputUrl)}&omit_script=true`,
+        { signal: AbortSignal.timeout(10000) }
+      );
+      if (oembedRes.ok) {
+        const oembed = await oembedRes.json() as any;
+        const text = (oembed.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const author = oembed.author_name || "Twitter";
+        let imageUrl = "";
+        try { const html = await fetchHtml(inputUrl); imageUrl = extractImage(html); } catch {}
+        return {
+          type: "twitter",
+          title: `${author}: ${text.slice(0, 100)}`,
+          description: text.slice(0, 500),
+          imageUrl,
+          videoEmbedUrl: `https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`,
+          sourceUrl: inputUrl,
+          sourceName: author,
+          embedId: tweetId,
+          isVideo: false,
+        };
+      }
+    } catch {}
+    const html = await fetchHtml(inputUrl);
+    return {
+      type: "twitter",
+      title: extractTitle(html),
+      description: extractDescription(html),
+      imageUrl: extractImage(html),
+      sourceUrl: inputUrl,
+      sourceName: "X / Twitter",
+      embedId: tweetId,
+      isVideo: false,
+    };
+  }
+
+  // ── Instagram ────────────────────────────────────────────────────────────
   if (type === "instagram") {
-    // Instagram blocks server-side scraping — extract post ID and use oEmbed
-    const postId = inputUrl.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] || 
+    const postId = inputUrl.match(/\/p\/([A-Za-z0-9_-]+)/)?.[1] ||
                    inputUrl.match(/\/reel\/([A-Za-z0-9_-]+)/)?.[1] || "";
     try {
-      // Try Instagram oEmbed (works without auth for public posts)
       const oembedRes = await fetch(
         `https://graph.facebook.com/v19.0/instagram_oembed?url=${encodeURIComponent(inputUrl)}&access_token=${process.env.INSTAGRAM_ACCESS_TOKEN || ""}`,
         { signal: AbortSignal.timeout(8000) }
@@ -215,34 +207,40 @@ export async function scrapeUrl(inputUrl: string): Promise<ScrapedContent> {
           description: oembed.title || "Instagram post",
           imageUrl: oembed.thumbnail_url || "",
           videoThumbnailUrl: oembed.thumbnail_url || "",
+          videoEmbedUrl: postId ? `https://www.instagram.com/p/${postId}/embed/` : undefined,
           sourceUrl: inputUrl,
           sourceName: oembed.author_name || "Instagram",
           embedId: postId,
+          isVideo: true,
         };
       }
-    } catch { /* fall through */ }
-    // Fallback: return a usable stub so the post can still be created
+    } catch {}
+    // Fallback stub — needs manual input
     return {
       type: "instagram",
-      title: `Instagram Post${postId ? " (" + postId + ")" : ""}`,
-      description: "Instagram post — content loaded from the original post.",
+      title: "",
+      description: "",
       imageUrl: "",
       sourceUrl: inputUrl,
       sourceName: "Instagram",
       embedId: postId,
+      isVideo: true,
     };
   }
 
-    // ── Article / generic URL ─────────────────────────────────────────────────
+  // ── Article / generic ────────────────────────────────────────────────────
   const html = await fetchHtml(inputUrl);
   const hostname = new URL(inputUrl).hostname.replace("www.", "");
-
+  // Check if it's a direct video file
+  const isDirectVideo = /\.(mp4|mov|webm|avi)(\?|$)/i.test(inputUrl);
   return {
     type: "article",
     title: extractTitle(html),
     description: extractDescription(html),
     imageUrl: extractImage(html),
+    videoUrl: isDirectVideo ? inputUrl : undefined,
     sourceUrl: inputUrl,
     sourceName: hostname,
+    isVideo: isDirectVideo,
   };
 }

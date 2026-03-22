@@ -20,13 +20,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   throw lastErr;
 }
 
-// Upload image buffer as multipart to FB photos endpoint
-async function uploadImageToFB(
-  imageBuffer: Buffer,
-  pageId: string,
-  accessToken: string,
-  published = false
-): Promise<string> {
+async function uploadImageToFB(imageBuffer: Buffer, pageId: string, accessToken: string, published = false): Promise<string> {
   const blob = new Blob(
     [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
     { type: "image/jpeg" }
@@ -35,92 +29,61 @@ async function uploadImageToFB(
   form.append("source", blob, "image.jpg");
   form.append("published", String(published));
   form.append("access_token", accessToken);
-
-  const res = await fetch(`${GRAPH_API}/${pageId}/photos`, {
-    method: "POST",
-    body: form,
-  });
+  const res = await fetch(`${GRAPH_API}/${pageId}/photos`, { method: "POST", body: form });
   const data = await res.json() as any;
-  if (!res.ok || data.error) {
-    throw new Error(data?.error?.message ?? `Upload failed: HTTP ${res.status}`);
-  }
+  if (!res.ok || data.error) throw new Error(data?.error?.message ?? `Upload failed: HTTP ${res.status}`);
   return data.id as string;
 }
 
-// Poll IG container until status is FINISHED (or timeout after 60s)
 async function waitForIGContainer(containerId: string, token: string): Promise<void> {
-  const maxAttempts = 12; // 12 × 5s = 60s max
+  const maxAttempts = 12;
   for (let i = 0; i < maxAttempts; i++) {
-    await sleep(5000); // wait 5s between polls
+    await sleep(5000);
     try {
-      const res = await fetch(
-        `${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`
-      );
+      const res = await fetch(`${GRAPH_API}/${containerId}?fields=status_code,status&access_token=${token}`);
       const data = await res.json() as any;
       const status = data.status_code || data.status || "";
       console.log(`[ig] container ${containerId} status: ${status} (attempt ${i + 1})`);
       if (status === "FINISHED") return;
-      if (status === "ERROR" || status === "EXPIRED") {
-        throw new Error(`IG container failed with status: ${status}`);
-      }
-      // IN_PROGRESS or empty — keep polling
+      if (status === "ERROR" || status === "EXPIRED") throw new Error(`IG container failed: ${status}`);
     } catch (err: any) {
-      if (err.message.includes("failed with status")) throw err;
-      // network error — keep trying
+      if (err.message.includes("failed:")) throw err;
     }
   }
-  // Timeout — try publishing anyway (sometimes status endpoint is unreliable)
-  console.warn("[ig] container status polling timed out — attempting publish anyway");
+  console.warn("[ig] container polling timed out — attempting publish anyway");
 }
 
-async function publishToInstagram(
+// ── Video posting to Instagram ───────────────────────────────────────────────
+async function publishVideoToInstagram(
   post: SocialPost,
-  imageBuffer: Buffer
+  videoUrl: string
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  const fbPageId = process.env.FACEBOOK_PAGE_ID;
-
-  if (!token || !accountId || !fbToken || !fbPageId) {
-    return { success: false, error: "Instagram/Facebook tokens not configured" };
-  }
+  if (!token || !accountId) return { success: false, error: "Instagram tokens not configured" };
 
   try {
-    // Step 1: Upload image to FB as unpublished to get a hosted URL
-    const fbPhotoId = await withRetry(() =>
-      uploadImageToFB(imageBuffer, fbPageId, fbToken, false)
-    );
-
-    // Step 2: Get the hosted image URL from FB
-    const photoRes = await fetch(
-      `${GRAPH_API}/${fbPhotoId}?fields=images&access_token=${fbToken}`
-    );
-    const photoData = await photoRes.json() as any;
-    const hostedUrl: string = photoData.images?.[0]?.source ?? "";
-    if (!hostedUrl) throw new Error("Could not get hosted image URL from FB");
-
-    // Step 3: Create IG media container
+    // Step 1: Create video container
     const containerRes = await withRetry(() =>
       fetch(`${GRAPH_API}/${accountId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          image_url: hostedUrl,
+          media_type: "REELS",
+          video_url: videoUrl,
           caption: post.caption,
+          share_to_feed: true,
           access_token: token,
         }),
       })
     );
     const container = await containerRes.json() as any;
-    if (!containerRes.ok || container.error) {
-      throw new Error(container?.error?.message ?? "IG container creation failed");
-    }
+    if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG video container failed");
 
-    // Step 4: WAIT for container to be ready (fixes "Media ID is not available")
+    // Step 2: Wait for processing
     await waitForIGContainer(container.id, token);
 
-    // Step 5: Publish the container
+    // Step 3: Publish
     const publishRes = await withRetry(() =>
       fetch(`${GRAPH_API}/${accountId}/media_publish`, {
         method: "POST",
@@ -129,10 +92,81 @@ async function publishToInstagram(
       })
     );
     const published = await publishRes.json() as any;
-    if (!publishRes.ok || published.error) {
-      throw new Error(published?.error?.message ?? "IG publish failed");
-    }
+    if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG video publish failed");
+    return { success: true, postId: published.id };
+  } catch (err: any) {
+    console.error("[ig-video] error:", err?.message);
+    return { success: false, error: err?.message ?? "Unknown error" };
+  }
+}
 
+// ── Video posting to Facebook ────────────────────────────────────────────────
+async function publishVideoToFacebook(
+  post: SocialPost,
+  videoUrl: string
+): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = process.env.FACEBOOK_ACCESS_TOKEN;
+  const pageId = process.env.FACEBOOK_PAGE_ID;
+  if (!token || !pageId) return { success: false, error: "Facebook tokens not configured" };
+
+  try {
+    const fbCaption = post.articleUrl ? post.caption + "\n\n🔗 " + post.articleUrl : post.caption;
+    const res = await withRetry(() =>
+      fetch(`${GRAPH_API}/${pageId}/videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_url: videoUrl,
+          description: fbCaption,
+          access_token: token,
+        }),
+      })
+    );
+    const data = await res.json() as any;
+    if (!res.ok || data.error) throw new Error(data?.error?.message ?? `HTTP ${res.status}`);
+    return { success: true, postId: data.id };
+  } catch (err: any) {
+    console.error("[fb-video] error:", err?.message);
+    return { success: false, error: err?.message ?? "Unknown error" };
+  }
+}
+
+// ── Image posting to Instagram ───────────────────────────────────────────────
+async function publishToInstagram(post: SocialPost, imageBuffer: Buffer): Promise<{ success: boolean; postId?: string; error?: string }> {
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+  const fbPageId = process.env.FACEBOOK_PAGE_ID;
+  if (!token || !accountId || !fbToken || !fbPageId) return { success: false, error: "Instagram/Facebook tokens not configured" };
+
+  try {
+    const fbPhotoId = await withRetry(() => uploadImageToFB(imageBuffer, fbPageId, fbToken, false));
+    const photoRes = await fetch(`${GRAPH_API}/${fbPhotoId}?fields=images&access_token=${fbToken}`);
+    const photoData = await photoRes.json() as any;
+    const hostedUrl: string = photoData.images?.[0]?.source ?? "";
+    if (!hostedUrl) throw new Error("Could not get hosted image URL from FB");
+
+    const containerRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image_url: hostedUrl, caption: post.caption, access_token: token }),
+      })
+    );
+    const container = await containerRes.json() as any;
+    if (!containerRes.ok || container.error) throw new Error(container?.error?.message ?? "IG container creation failed");
+
+    await waitForIGContainer(container.id, token);
+
+    const publishRes = await withRetry(() =>
+      fetch(`${GRAPH_API}/${accountId}/media_publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creation_id: container.id, access_token: token }),
+      })
+    );
+    const published = await publishRes.json() as any;
+    if (!publishRes.ok || published.error) throw new Error(published?.error?.message ?? "IG publish failed");
     return { success: true, postId: published.id };
   } catch (err: any) {
     console.error("[ig] error:", err?.message);
@@ -140,16 +174,11 @@ async function publishToInstagram(
   }
 }
 
-async function publishToFacebook(
-  post: SocialPost,
-  imageBuffer: Buffer
-): Promise<{ success: boolean; postId?: string; error?: string }> {
+// ── Image posting to Facebook ────────────────────────────────────────────────
+async function publishToFacebook(post: SocialPost, imageBuffer: Buffer): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.FACEBOOK_ACCESS_TOKEN;
   const pageId = process.env.FACEBOOK_PAGE_ID;
-
-  if (!token || !pageId) {
-    return { success: false, error: "Facebook tokens not configured" };
-  }
+  if (!token || !pageId) return { success: false, error: "Facebook tokens not configured" };
 
   try {
     const blob = new Blob(
@@ -158,21 +187,12 @@ async function publishToFacebook(
     );
     const form = new FormData();
     form.append("source", blob, "image.jpg");
-    // Facebook: append article link so followers can read the full story
-    const fbCaption = post.articleUrl
-      ? post.caption + "\n\n🔗 " + post.articleUrl
-      : post.caption;
+    const fbCaption = post.articleUrl ? post.caption + "\n\n🔗 " + post.articleUrl : post.caption;
     form.append("caption", fbCaption);
     form.append("access_token", token);
-
-    const res = await withRetry(() =>
-      fetch(`${GRAPH_API}/${pageId}/photos`, { method: "POST", body: form })
-    );
+    const res = await withRetry(() => fetch(`${GRAPH_API}/${pageId}/photos`, { method: "POST", body: form }));
     const data = await res.json() as any;
-    if (!res.ok || data.error) {
-      throw new Error(data?.error?.message ?? `HTTP ${res.status}`);
-    }
-
+    if (!res.ok || data.error) throw new Error(data?.error?.message ?? `HTTP ${res.status}`);
     return { success: true, postId: data.id };
   } catch (err: any) {
     console.error("[fb] error:", err?.message);
@@ -182,8 +202,18 @@ async function publishToFacebook(
 
 export async function publish(
   posts: { ig?: SocialPost; fb?: SocialPost },
-  imageBuffer: Buffer
+  imageBuffer: Buffer,
+  videoUrl?: string
 ): Promise<PublishResult> {
+  if (videoUrl) {
+    // Post as actual video to both platforms
+    const [instagram, facebook] = await Promise.all([
+      posts.ig ? publishVideoToInstagram(posts.ig, videoUrl) : Promise.resolve({ success: false, error: "skipped" }),
+      posts.fb ? publishVideoToFacebook(posts.fb, videoUrl) : Promise.resolve({ success: false, error: "skipped" }),
+    ]);
+    return { instagram, facebook };
+  }
+  // Default: post as image
   const [instagram, facebook] = await Promise.all([
     posts.ig ? publishToInstagram(posts.ig, imageBuffer) : Promise.resolve({ success: false, error: "skipped" }),
     posts.fb ? publishToFacebook(posts.fb, imageBuffer) : Promise.resolve({ success: false, error: "skipped" }),

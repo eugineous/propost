@@ -20,7 +20,7 @@ async function logPost(entry: object): Promise<void> {
       body: JSON.stringify(entry),
       signal: AbortSignal.timeout(5000),
     });
-  } catch { /* non-fatal */ }
+  } catch {}
 }
 
 function typeToCategory(type: string, title: string): string {
@@ -48,9 +48,9 @@ export async function POST(req: NextRequest) {
 
   try {
     let article: Article;
+    let videoUrl: string | undefined;
 
     if (/instagram\.com/.test(url) && manualTitle && manualCaption) {
-      // Instagram: use manually provided content
       article = {
         id: createHash("sha256").update(url).digest("hex").slice(0, 16),
         title: manualTitle,
@@ -63,18 +63,16 @@ export async function POST(req: NextRequest) {
         publishedAt: new Date(),
       };
     } else {
-      // All other URLs: scrape normally
       const scraped = await scrapeUrl(url);
-      if (!scraped.title) {
-        return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
-      }
+      if (!scraped.title) return NextResponse.json({ error: "Could not extract content from URL" }, { status: 422 });
+      videoUrl = scraped.videoUrl; // direct MP4 URL if available
       article = {
         id: createHash("sha256").update(url).digest("hex").slice(0, 16),
-        title: scraped.title,
+        title: manualTitle || scraped.title,
         url: scraped.sourceUrl,
         imageUrl: scraped.imageUrl || scraped.videoThumbnailUrl || "",
-        summary: scraped.description,
-        fullBody: scraped.description,
+        summary: manualCaption || scraped.description,
+        fullBody: manualCaption || scraped.description,
         sourceName: scraped.sourceName,
         category: category || typeToCategory(scraped.type, scraped.title),
         publishedAt: new Date(),
@@ -86,15 +84,14 @@ export async function POST(req: NextRequest) {
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
 
     if (dryRun) {
-      return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run — not posted" });
+      return NextResponse.json({ article, ai, imageBase64: imageBuffer.toString("base64"), message: "Dry run" });
     }
 
     const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
     const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
-    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
+    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoUrl);
 
     const anySuccess = result.facebook.success || result.instagram.success;
-
     if (anySuccess) {
       await logPost({
         articleId: article.id,
@@ -109,13 +106,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({
-      success: anySuccess,
-      ai: { clickbaitTitle: ai.clickbaitTitle },
-      instagram: result.instagram,
-      facebook: result.facebook,
-    });
-
+    return NextResponse.json({ success: anySuccess, ai: { clickbaitTitle: ai.clickbaitTitle }, instagram: result.instagram, facebook: result.facebook });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
