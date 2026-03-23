@@ -9,11 +9,8 @@ import { createHash } from "crypto";
 
 export const maxDuration = 180;
 
-const GRAPH_API = "https://graph.facebook.com/v19.0";
 const WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || "https://ppptv-worker.euginemicah.workers.dev";
 const WORKER_SECRET = process.env.WORKER_SECRET || "";
-
-async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 
 async function logPost(entry: object): Promise<void> {
   if (!WORKER_SECRET) return;
@@ -27,27 +24,17 @@ async function logPost(entry: object): Promise<void> {
   } catch {}
 }
 
-async function uploadThumbnailToCDN(imageBuffer: Buffer): Promise<string | undefined> {
-  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  const fbPageId = process.env.FACEBOOK_PAGE_ID;
-  if (!fbToken || !fbPageId) return undefined;
-  try {
-    const blob = new Blob(
-      [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
-      { type: "image/jpeg" }
-    );
-    const form = new FormData();
-    form.append("source", blob, "cover.jpg");
-    form.append("published", "false");
-    form.append("access_token", fbToken);
-    const res = await fetch(`${GRAPH_API}/${fbPageId}/photos`, { method: "POST", body: form });
-    const data = await res.json() as any;
-    if (!res.ok || data.error) return undefined;
-    await sleep(4000);
-    const photoRes = await fetch(`${GRAPH_API}/${data.id}?fields=images&access_token=${fbToken}`);
-    const photoData = await photoRes.json() as any;
-    return photoData.images?.[0]?.source ?? undefined;
-  } catch { return undefined; }
+// Download video to buffer — tries resolved URL first, then original
+async function downloadVideo(sourceUrl: string): Promise<Buffer> {
+  const resolved = await resolveVideoUrl(sourceUrl).catch(() => null);
+  const fetchUrl = resolved?.url || sourceUrl;
+
+  const res = await fetch(fetchUrl, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+    signal: AbortSignal.timeout(90000),
+  });
+  if (!res.ok) throw new Error(`Video download failed: HTTP ${res.status} from ${fetchUrl}`);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 export async function POST(req: NextRequest) {
@@ -81,16 +68,41 @@ export async function POST(req: NextRequest) {
       publishedAt: new Date(),
     };
 
+    // Generate branded thumbnail image
     const imageBuffer = await generateImage(article, { isBreaking: false });
-    const coverImageUrl = await uploadThumbnailToCDN(imageBuffer);
 
-    // YouTube: resolved via ytdl-core; direct .mp4: pass through; others: use original URL
-    const resolved = await resolveVideoUrl(url).catch(() => null);
-    const videoUrl = resolved?.url || scraped.videoUrl || url;
+    // Download video buffer — this is what gets uploaded to FB/IG
+    const videoBuffer = await downloadVideo(url);
+
+    // Use the branded thumbnail as cover for IG Reels
+    // Upload it to FB CDN to get a hosted URL
+    let coverImageUrl: string | undefined;
+    try {
+      const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
+      const fbPageId = process.env.FACEBOOK_PAGE_ID;
+      if (fbToken && fbPageId) {
+        const blob = new Blob(
+          [imageBuffer.buffer.slice(imageBuffer.byteOffset, imageBuffer.byteOffset + imageBuffer.byteLength) as ArrayBuffer],
+          { type: "image/jpeg" }
+        );
+        const form = new FormData();
+        form.append("source", blob, "cover.jpg");
+        form.append("published", "false");
+        form.append("access_token", fbToken);
+        const res = await fetch(`https://graph.facebook.com/v19.0/${fbPageId}/photos`, { method: "POST", body: form });
+        const data = await res.json() as any;
+        if (res.ok && !data.error) {
+          await new Promise(r => setTimeout(r, 4000));
+          const photoRes = await fetch(`https://graph.facebook.com/v19.0/${data.id}?fields=images&access_token=${fbToken}`);
+          const photoData = await photoRes.json() as any;
+          coverImageUrl = photoData.images?.[0]?.source;
+        }
+      }
+    } catch {}
 
     const igPost = { platform: "instagram" as const, caption, articleUrl: article.url };
     const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url };
-    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoUrl, coverImageUrl);
+    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoBuffer, coverImageUrl);
 
     const anySuccess = result.facebook.success || result.instagram.success;
     if (anySuccess) {

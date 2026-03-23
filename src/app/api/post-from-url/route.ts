@@ -105,7 +105,22 @@ export async function POST(req: NextRequest) {
 
     const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
     const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
-    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoUrl);
+
+    // Download video buffer if this is a video post
+    let videoBuffer: Buffer | undefined;
+    if (videoUrl) {
+      try {
+        const res = await fetch(videoUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; PPPTVBot/1.0)" },
+          signal: AbortSignal.timeout(90000),
+        });
+        if (res.ok) videoBuffer = Buffer.from(await res.arrayBuffer());
+      } catch (e: any) {
+        console.warn("[post-from-url] video download failed, skipping video:", e?.message);
+      }
+    }
+
+    const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer, videoBuffer);
 
     const anySuccess = result.facebook.success || result.instagram.success;
     if (anySuccess) {
