@@ -24,7 +24,7 @@ export default {
 
     // Auth check for all non-public endpoints
     const auth = request.headers.get("authorization");
-    const authed = auth === `Bearer ${env.AUTOMATE_SECRET}`;
+    const authed = auth === `Bearer ${env.WORKER_SECRET}`;
 
     if (url.pathname === "/") {
       return json({ status: "ok", service: "PPP TV Auto Poster" });
