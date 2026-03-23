@@ -1,6 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { isAuthenticated } from "@/lib/auth";
 
 export const maxDuration = 180;
 
@@ -73,11 +72,6 @@ async function uploadImageGetUrl(imageBase64: string, fbPageId: string, fbToken:
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  const bearerOk = auth === "Bearer " + process.env.AUTOMATE_SECRET && !!process.env.AUTOMATE_SECRET;
-  if (!isAuthenticated(req) && !bearerOk) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   let body: {
     // items: array of { type: "image"|"video", base64?: string, url?: string }

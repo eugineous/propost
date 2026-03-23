@@ -53,39 +53,55 @@ async function waitForIGContainer(containerId: string, token: string): Promise<v
   console.warn("[ig] container polling timed out — attempting publish anyway");
 }
 
-// Upload video buffer to Facebook page as unpublished, return video ID + hosted source URL
-async function stageFBVideo(
+// Upload video buffer to IG via resumable upload API, return the video handle
+async function uploadVideoToIG(
   videoBuffer: Buffer,
-  pageId: string,
+  accountId: string,
   token: string
-): Promise<{ id: string; sourceUrl: string }> {
+): Promise<string> {
+  const fileSize = videoBuffer.byteLength;
+
+  // Step 1: Initialize upload session
+  const initRes = await fetch(`https://rupload.facebook.com/ig-api-upload/v19.0/${accountId}/videos`, {
+    method: "POST",
+    headers: {
+      "Authorization": `OAuth ${token}`,
+      "X-FB-Video-File-Size": String(fileSize),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ upload_type: "resumable" }),
+  });
+  const initData = await initRes.json() as any;
+  if (!initRes.ok || initData.error) throw new Error(initData?.error?.message ?? `IG upload init failed: HTTP ${initRes.status}`);
+  const uploadUrl = initData.uri as string;
+  if (!uploadUrl) throw new Error("IG upload init did not return a URI");
+
+  // Step 2: Upload the video bytes
   const blob = new Blob(
     [videoBuffer.buffer.slice(videoBuffer.byteOffset, videoBuffer.byteOffset + videoBuffer.byteLength) as ArrayBuffer],
     { type: "video/mp4" }
   );
-  const form = new FormData();
-  form.append("source", blob, "video.mp4");
-  form.append("published", "false");
-  form.append("access_token", token);
-  const res = await fetch(`${GRAPH_API}/${pageId}/videos`, { method: "POST", body: form });
-  const data = await res.json() as any;
-  if (!res.ok || data.error) throw new Error(data?.error?.message ?? `FB video stage failed: HTTP ${res.status}`);
-
-  // Poll until FB has processed the video and we can get a source URL
-  const videoId = data.id as string;
-  for (let i = 0; i < 12; i++) {
-    await sleep(5000);
-    const infoRes = await fetch(`${GRAPH_API}/${videoId}?fields=source,status&access_token=${token}`);
-    const info = await infoRes.json() as any;
-    if (info.source) return { id: videoId, sourceUrl: info.source };
-    const s = info.status?.processing_progress;
-    console.log(`[fb-stage] video ${videoId} processing: ${s ?? "unknown"}%`);
-  }
-  throw new Error("FB video staging timed out — could not get source URL");
+  const uploadRes = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      "Authorization": `OAuth ${token}`,
+      "X-Entity-Type": "video/mp4",
+      "X-Entity-Name": "video.mp4",
+      "X-Entity-Length": String(fileSize),
+      "Offset": "0",
+      "Content-Type": "application/octet-stream",
+    },
+    body: blob,
+  });
+  const uploadData = await uploadRes.json() as any;
+  if (!uploadRes.ok || uploadData.error) throw new Error(uploadData?.error?.message ?? `IG video upload failed: HTTP ${uploadRes.status}`);
+  const videoHandle = uploadData.h as string;
+  if (!videoHandle) throw new Error("IG video upload did not return a handle");
+  return videoHandle;
 }
 
 // ── Video posting to Instagram ───────────────────────────────────────────────
-// Strategy: upload video buffer to FB as unpublished → get hosted URL → use as IG video_url
+// Strategy: upload video buffer directly to IG via resumable upload API → create Reels container with video handle
 async function publishVideoToInstagram(
   post: SocialPost,
   videoBuffer: Buffer,
@@ -93,23 +109,20 @@ async function publishVideoToInstagram(
 ): Promise<{ success: boolean; postId?: string; error?: string }> {
   const token = process.env.INSTAGRAM_ACCESS_TOKEN;
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  const fbToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  const fbPageId = process.env.FACEBOOK_PAGE_ID;
   if (!token || !accountId) return { success: false, error: "Instagram tokens not configured" };
-  if (!fbToken || !fbPageId) return { success: false, error: "Facebook tokens required for IG video upload" };
 
   try {
-    // Stage video on FB CDN to get a publicly accessible URL for IG
-    const { sourceUrl: hostedVideoUrl } = await stageFBVideo(videoBuffer, fbPageId, fbToken);
+    // Upload video directly to IG and get a video handle
+    const videoHandle = await uploadVideoToIG(videoBuffer, accountId, token);
 
-    // Create IG Reels container
+    // Create IG Reels container using the video handle
     const containerRes = await withRetry(() =>
       fetch(`${GRAPH_API}/${accountId}/media`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           media_type: "REELS",
-          video_url: hostedVideoUrl,
+          video_handle: videoHandle,
           caption: post.caption,
           share_to_feed: true,
           ...(coverUrl ? { cover_url: coverUrl } : {}),

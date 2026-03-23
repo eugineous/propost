@@ -4,7 +4,6 @@ import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { resolveVideoUrl } from "@/lib/video-downloader";
 import { Article } from "@/lib/types";
-import { isAuthenticated } from "@/lib/auth";
 import { createHash } from "crypto";
 
 export const maxDuration = 180;
@@ -38,11 +37,6 @@ async function downloadVideo(sourceUrl: string): Promise<Buffer> {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  const bearerOk = auth === "Bearer " + process.env.AUTOMATE_SECRET && !!process.env.AUTOMATE_SECRET;
-  if (!isAuthenticated(req) && !bearerOk) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
 
   let body: { url?: string; headline?: string; caption?: string; category?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
