@@ -19,10 +19,8 @@ export async function GET(req: NextRequest) {
     category: (searchParams.get("category") ?? "GENERAL").toUpperCase(),
   };
 
-  const categoryLabel = searchParams.get("categoryLabel") ?? "TRENDING";
-
   try {
-    const buffer = await generateImage(article, { categoryLabel });
+    const buffer = await generateImage(article, {});
     return new NextResponse(buffer as unknown as BodyInit, {
       headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" },
     });
@@ -55,7 +53,7 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const buffer = await generateImage(article, { categoryLabel: "TRENDING" });
+    const buffer = await generateImage(article, {});
     return new NextResponse(buffer as unknown as BodyInit, {
       headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" },
     });
