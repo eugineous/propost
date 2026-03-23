@@ -59,8 +59,8 @@ function isKenyaRelevant(a: Article): boolean {
 // ── Quality gate ──────────────────────────────────────────────────────────────
 function hasMinimumContent(a: Article): boolean {
   if (!a.title || a.title.trim().length < 10) return false;
-  // imageUrl optional — image-gen uses gradient fallback when missing
-  if (!a.summary || a.summary.trim().length < 30) return false; // must have real content
+  if (!a.imageUrl || a.imageUrl.trim() === "") return false; // image required — no fallback
+  if (!a.summary || a.summary.trim().length < 30) return false;
   return true;
 }
 

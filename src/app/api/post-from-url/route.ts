@@ -90,6 +90,11 @@ export async function POST(req: NextRequest) {
       };
     }
 
+    // Require image — reject if none found
+    if (!article.imageUrl || article.imageUrl.trim() === "") {
+      return NextResponse.json({ error: "No image found for this URL — cannot generate thumbnail" }, { status: 422 });
+    }
+
     const ai = await generateAIContent(article, { isVideo, videoType });
     const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
     const imageBuffer = await generateImage(articleWithAITitle, { isBreaking: false });
