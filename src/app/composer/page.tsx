@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useState, useRef, useCallback, useEffect } from "react";
+import Shell from "../shell";
 
 const PINK = "#FF007A";
 
@@ -350,25 +351,21 @@ export default function ComposerPage() {
   const [tab, setTab] = useState<Tab>("video");
 
   return (
-    <div style={{ minHeight: "100dvh", background: "#000", color: "#fff", fontFamily: "'Inter',system-ui,sans-serif" }}>
-      <style>{`*{box-sizing:border-box;margin:0;padding:0} input,button,textarea,select{font-family:inherit} input::placeholder,textarea::placeholder{color:#444} textarea{font-family:inherit}`}</style>
-      <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 16px 80px" }}>
-
+    <Shell>
+      <div style={{ maxWidth: 600, margin: "0 auto", padding: "32px 24px 80px" }}>
         {/* Header */}
         <div style={{ marginBottom: 28 }}>
-          <a href="/dashboard" style={{ fontSize: 11, color: "#444", textDecoration: "none", letterSpacing: 1 }}>← DASHBOARD</a>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: PINK }} />
-            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, letterSpacing: 2 }}>
-              AUTO <span style={{ color: PINK }}>PPP TV</span>
+            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 28, letterSpacing: 2 }}>
+              COMPOSER
             </span>
-            <span style={{ fontSize: 10, color: "#444", letterSpacing: 2 }}>COMPOSER</span>
           </div>
-          <p style={{ fontSize: 12, color: "#444", marginTop: 6 }}>Manually post a video or carousel to Instagram & Facebook</p>
+          <p style={{ fontSize: 12, color: "#555" }}>Manually post a video or carousel to Instagram & Facebook</p>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 28, padding: 4, background: "#0a0a0a", borderRadius: 8, border: "1px solid #111" }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 28, padding: 4, background: "#1a1a1a", borderRadius: 8, border: "1px solid #2a2a2a" }}>
           {([["video", "🎬  Video Post"], ["carousel", "🖼  Carousel"]] as [Tab, string][]).map(([t, label]) => (
             <button key={t} onClick={() => setTab(t)}
               style={{ flex: 1, padding: "10px 0", fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", border: "none", borderRadius: 6, cursor: "pointer", transition: "all .15s", background: tab === t ? PINK : "transparent", color: tab === t ? "#fff" : "#555" }}>
@@ -379,6 +376,6 @@ export default function ComposerPage() {
 
         {tab === "video" ? <VideoTab /> : <CarouselTab />}
       </div>
-    </div>
+    </Shell>
   );
 }
