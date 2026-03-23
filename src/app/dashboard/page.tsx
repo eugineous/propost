@@ -449,11 +449,12 @@ export default function Dashboard() {
     }
   }
 
-  const latest = log.length > 0 ? [...log].reverse()[0] : null;
-  const todayCount = log.filter(p => new Date(p.postedAt).toDateString() === new Date().toDateString()).length;
+  const sortedLog = [...log].sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+  const latest = sortedLog.length > 0 ? sortedLog[0] : null;
+  const todayCount = sortedLog.filter(p => new Date(p.postedAt).toDateString() === new Date().toDateString()).length;
 
   // Filtered log
-  const filtered = log.filter(e => {
+  const filtered = sortedLog.filter(e => {
     if (search && !e.title.toLowerCase().includes(search.toLowerCase()) && !e.category.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterCat !== "ALL" && e.category !== filterCat) return false;
     if (filterPlatform === "ig" && !e.instagram.success) return false;
@@ -464,12 +465,12 @@ export default function Dashboard() {
 
   // Group by category for Netflix rows
   const byCategory = CATS.reduce((acc, cat) => {
-    const entries = [...log].reverse().filter(e => e.category === cat);
+    const entries = sortedLog.filter(e => e.category === cat);
     if (entries.length > 0) acc[cat] = entries;
     return acc;
   }, {} as Record<string, LogEntry[]>);
 
-  const recentAll = [...log].reverse().slice(0, 20);
+  const recentAll = sortedLog.slice(0, 20);
 
   return (
     <Shell>
@@ -535,7 +536,7 @@ export default function Dashboard() {
                 <div>
                   <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>{filtered.length} results</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
-                    {filtered.slice().reverse().map(e => <PostCard key={e.articleId} entry={e} onRetry={doRetry} retries={retries} />)}
+                    {filtered.map(e => <PostCard key={e.articleId} entry={e} onRetry={doRetry} retries={retries} />)}
                   </div>
                   {filtered.length === 0 && <div style={{ textAlign: "center", padding: 60, color: "#333", fontSize: 14 }}>No posts match your filters</div>}
                 </div>
