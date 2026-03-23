@@ -1,7 +1,7 @@
 ﻿/**
  * PPP TV Auto Poster — Cloudflare Worker
- * Cron 1 (*/15): post one article
- * Cron 2 (0 3 * * *): delete R2 videos older than 24h
+ * Cron 1: every 15 minutes — post one article
+ * Cron 2: daily at 3am — delete R2 videos older than 24h
  */
 
 const RSS_URL = "https://ppptv-v2.vercel.app/api/rss";
