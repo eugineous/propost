@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchArticles } from "@/lib/scraper";
-import { generateAIContent } from "@/lib/gemini";
 import { generateImage } from "@/lib/image-gen";
 import { publish } from "@/lib/publisher";
 import { Article, SchedulerResponse } from "@/lib/types";
@@ -206,21 +205,14 @@ async function getTrendingTopics(): Promise<string[]> {
 }
 
 async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ success: boolean; error?: string }> {
-  // Note: markSeen is called BEFORE this function to prevent race conditions
+  // Generate image using raw article title (no AI clickbait)
+  const imageBuffer = await generateImage(article, { isBreaking });
 
-  // Parallel: generate AI content + image at the same time
-  const ai = await generateAIContent(article);
-  const articleWithAITitle = { ...article, title: ai.clickbaitTitle };
+  // Caption = just the excerpt, no hashtags, no AI
+  const caption = article.summary?.trim() || article.title;
 
-  // Generate both feed image and story image in parallel
-  const [imageBuffer] = await Promise.all([
-    generateImage(articleWithAITitle, { isBreaking }),
-    // Story format generated but not posted yet (future feature)
-    // generateImage(articleWithAITitle, { isBreaking, storyFormat: true }),
-  ]);
-
-  const igPost = { platform: "instagram" as const, caption: ai.caption, articleUrl: article.url };
-  const fbPost = { platform: "facebook" as const, caption: ai.caption, articleUrl: article.url };
+  const igPost = { platform: "instagram" as const, caption, articleUrl: article.url };
+  const fbPost = { platform: "facebook" as const, caption, articleUrl: article.url };
   const result = await publish({ ig: igPost, fb: fbPost }, imageBuffer);
 
   const anySuccess = result.facebook.success || result.instagram.success;
@@ -228,7 +220,7 @@ async function postOneArticle(article: Article, isBreaking: boolean): Promise<{ 
   if (anySuccess) {
     await Promise.all([
       logPost({
-        articleId: article.id, title: ai.clickbaitTitle, url: article.url,
+        articleId: article.id, title: article.title, url: article.url,
         category: article.category, instagram: result.instagram,
         facebook: result.facebook, postedAt: new Date().toISOString(),
         isBreaking,
