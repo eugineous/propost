@@ -59,16 +59,17 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   } catch { return null; }
 }
 
-// Auto-size headline based on character count
+// Auto-size headline based on character count — big and bold
 function getHeadlineFontSize(title: string): number {
   const chars = title.length;
-  if (chars <= 30) return 110;
-  if (chars <= 45) return 92;
-  if (chars <= 60) return 78;
-  if (chars <= 80) return 66;
-  if (chars <= 100) return 56;
-  if (chars <= 120) return 48;
-  return 42;
+  if (chars <= 20) return 160;
+  if (chars <= 30) return 140;
+  if (chars <= 40) return 122;
+  if (chars <= 55) return 108;
+  if (chars <= 70) return 94;
+  if (chars <= 90) return 80;
+  if (chars <= 110) return 68;
+  return 58;
 }
 
 export interface ImageOptions {
@@ -155,19 +156,19 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
             },
           },
 
-          // ── PPP TV Logo — top-left corner, on top of image ───────────────
+          // ── PPP TV Logo — top-left corner, bigger and bolder ────────────
           {
             type: "div",
             props: {
               style: {
                 display: "flex",
-                position: "absolute", top: 36, left: 36,
+                position: "absolute", top: 40, left: 40,
               },
               children: [{
                 type: "img",
                 props: {
                   src: PPP_LOGO_B64,
-                  style: { width: 180, height: 72, objectFit: "contain" },
+                  style: { width: 280, height: 112, objectFit: "contain" },
                 },
               }],
             },
@@ -194,19 +195,19 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                       display: "flex",
                       alignSelf: "flex-start",
                       backgroundColor: catBg,
-                      paddingLeft: 24, paddingRight: 24,
-                      paddingTop: 10, paddingBottom: 10,
+                      paddingLeft: 30, paddingRight: 30,
+                      paddingTop: 14, paddingBottom: 14,
                       borderRadius: 50,
-                      marginBottom: 20,
+                      marginBottom: 24,
                     },
                     children: [{
                       type: "span",
                       props: {
                         style: {
                           color: catText,
-                          fontSize: 30,
+                          fontSize: 38,
                           fontWeight: 700,
-                          letterSpacing: 3,
+                          letterSpacing: 4,
                           lineHeight: 1,
                         },
                         children: category,
@@ -225,9 +226,9 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                       fontSize: fontSize,
                       fontWeight: 700,
                       color: "#FFFFFF",
-                      lineHeight: 1.05,
-                      letterSpacing: 1,
-                      marginBottom: 28,
+                      lineHeight: 1.0,
+                      letterSpacing: 2,
+                      marginBottom: 32,
                     },
                     children: title,
                   },
@@ -241,8 +242,8 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                       display: "flex",
                       alignSelf: "flex-start",
                       backgroundColor: catBg,
-                      paddingLeft: 28, paddingRight: 28,
-                      paddingTop: 12, paddingBottom: 12,
+                      paddingLeft: 34, paddingRight: 34,
+                      paddingTop: 16, paddingBottom: 16,
                       borderRadius: 50,
                     },
                     children: [{
@@ -250,9 +251,9 @@ export async function generateImage(article: Article, opts: ImageOptions = {}): 
                       props: {
                         style: {
                           color: catText,
-                          fontSize: 26,
+                          fontSize: 34,
                           fontWeight: 700,
-                          letterSpacing: 4,
+                          letterSpacing: 5,
                           lineHeight: 1,
                         },
                         children: "FOLLOW FOR MORE",
