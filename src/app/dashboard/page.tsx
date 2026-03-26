@@ -419,8 +419,8 @@ function CategoryRow({ title, entries, onRetry, retries }: { title: string; entr
 // ── Config Panel ──────────────────────────────────────────────────────────────
 function ConfigPanel() {
   const items = [
-    ["Schedule", "Every 15 min"], ["Peak Hours", "6am–11pm EAT"],
-    ["Daily Cap", "24 posts/day"], ["Per Run", "1 post"],
+    ["Schedule", "Every 10 min"], ["Hours", "24/7"],
+    ["Daily Cap", "None"], ["Per Run", "1 post"],
     ["Dedup", "Cloudflare KV"], ["Filter", "Kenya only"],
     ["Model", "Gemini 2.5 Flash"], ["Image", "1080×1350 JPEG"],
   ];
@@ -532,7 +532,7 @@ export default function Dashboard() {
             ))}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "#aaa" }}>{todayCount}/24 today</span>
+            <span style={{ fontSize: 11, color: "#aaa" }}>{todayCount} today</span>
             <Link href="/composer" style={{ background: PINK, color: "#fff", border: "none", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap" }}>
               + Compose
             </Link>

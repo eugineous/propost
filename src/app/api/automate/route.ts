@@ -245,17 +245,6 @@ export async function POST(req: NextRequest) {
 
   const response: SchedulerResponse = { posted: 0, skipped: 0, errors: [] };
 
-  // ── Best-time check — skip off-peak cron runs ─────────────────────────────
-  if (!isPostingHour()) {
-    return NextResponse.json({ ...response, message: "Off-peak hours — skipping" });
-  }
-
-  // ── Daily cap check ───────────────────────────────────────────────────────
-  const dailyCount = await getDailyCount();
-  if (dailyCount >= 24) {
-    return NextResponse.json({ ...response, message: "Daily cap reached (24 posts/day)" });
-  }
-
   try {
     // Fetch articles + trending topics in parallel
     const [all, trendingTopics, lastCategory] = await Promise.all([
@@ -290,9 +279,8 @@ export async function POST(req: NextRequest) {
       .map(a => ({ article: a, score: scoreArticle(a, trendingTopics) }))
       .sort((a, b) => b.score - a.score);
 
-    // 6. Post exactly 1 article per run (15-min cron = up to 68/day, capped at 24)
-    const remaining = 24 - dailyCount;
-    const toPost = scored.slice(0, Math.min(1, remaining)).map(s => s.article);
+    // 6. Post exactly 1 article per run (10-min cron, no daily cap)
+    const toPost = scored.slice(0, 1).map(s => s.article);
 
     // CRITICAL: Mark all selected articles as seen IMMEDIATELY before posting
     // This prevents concurrent cron runs from picking the same articles
