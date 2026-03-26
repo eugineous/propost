@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const RSS_URL = "https://ppptv-v2.vercel.app/api/rss";
+const RSS_URL = "https://ppp-tv-site.vercel.app/api/rss";
 
 export const maxDuration = 30;
 

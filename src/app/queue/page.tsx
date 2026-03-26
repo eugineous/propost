@@ -3,7 +3,16 @@ import { useState, useEffect, useCallback } from "react";
 import Shell from "../shell";
 
 const RED = "#E50914", PINK = "#FF007A";
-const PPPTV = "https://ppptv-v2.vercel.app";
+const PPPTV = "https://ppp-tv-site.vercel.app";
+
+const CAT_ACCENT: Record<string, string> = {
+  CELEBRITY: "#FF007A", NEWS: "#FF007A", POLITICS: "#FF007A", FASHION: "#FF007A",
+  MUSIC: "#FF6B00", "TV & FILM": "#3b82f6", MOVIES: "#3b82f6",
+  SPORTS: "#00CFFF", TECHNOLOGY: "#FFE600", BUSINESS: "#FFD700",
+  AWARDS: "#FFD700", ENTERTAINMENT: "#9B30FF", EVENTS: "#22C55E",
+  "EAST AFRICA": "#F97316", GENERAL: "#E50914",
+};
+function catAccent(cat: string): string { return CAT_ACCENT[(cat || "").toUpperCase()] ?? RED; }
 
 interface RssItem {
   title: string;
@@ -103,7 +112,7 @@ export default function QueuePage() {
               <p style={{ fontSize: 12, color: "#555" }}>
                 Live from{" "}
                 <a href={PPPTV} target="_blank" rel="noopener noreferrer" style={{ color: RED, textDecoration: "none", fontWeight: 700 }}>
-                  ppptv-v2.vercel.app
+                  ppp-tv-site.vercel.app
                 </a>
                 {" "}· {items.length} articles
               </p>
@@ -159,13 +168,13 @@ export default function QueuePage() {
         {!loading && !error && (
           <div style={{ display: "grid", gap: 6 }}>
             {filtered.length === 0 && (
-              <div style={{ textAlign: "center", padding: 60, color: "#333" }}>No articles found</div>
+              <div style={{ textAlign: "center", padding: 60, color: "#aaa" }}>No articles found</div>
             )}
             {filtered.map(item => {
               const key = item.link;
               const st = statuses[key];
               const posted = st?.ok;
-              const catColor = item.category === "CELEBRITY" ? PINK : item.category === "MUSIC" ? "#a855f7" : item.category === "TV & FILM" ? "#3b82f6" : RED;
+              const accent = catAccent(item.category || "GENERAL");
 
               return (
                 <div key={key} style={{
@@ -192,12 +201,12 @@ export default function QueuePage() {
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       {item.category && (
-                        <span style={{ background: catColor, color: "#fff", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3, letterSpacing: 1 }}>
+                        <span style={{ background: accent, color: "#fff", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 3, letterSpacing: 1 }}>
                           {item.category.toUpperCase()}
                         </span>
                       )}
-                      {item.sourceName && <span style={{ fontSize: 11, color: "#444" }}>{item.sourceName}</span>}
-                      {item.pubDate && <span style={{ fontSize: 11, color: "#333" }}>{ago(item.pubDate)}</span>}
+                      {item.sourceName && <span style={{ fontSize: 11, color: "#888" }}>{item.sourceName}</span>}
+                      {item.pubDate && <span style={{ fontSize: 11, color: "#888" }}>{ago(item.pubDate)}</span>}
                     </div>
                   </div>
 

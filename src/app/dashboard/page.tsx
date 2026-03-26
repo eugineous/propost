@@ -6,6 +6,28 @@ import Shell from "../shell";
 const CATS = ["AUTO","CELEBRITY","MUSIC","TV & FILM","FASHION","EVENTS","AWARDS","EAST AFRICA","GENERAL"];
 const PINK = "#FF007A", RED = "#E50914";
 
+// Category accent colors — stripe + text
+const CAT_ACCENT: Record<string, string> = {
+  CELEBRITY:     "#FF007A",
+  NEWS:          "#FF007A",
+  POLITICS:      "#FF007A",
+  FASHION:       "#FF007A",
+  MUSIC:         "#FF6B00",
+  "TV & FILM":   "#3b82f6",
+  MOVIES:        "#3b82f6",
+  SPORTS:        "#00CFFF",
+  TECHNOLOGY:    "#FFE600",
+  BUSINESS:      "#FFD700",
+  AWARDS:        "#FFD700",
+  ENTERTAINMENT: "#9B30FF",
+  EVENTS:        "#22C55E",
+  "EAST AFRICA": "#F97316",
+  GENERAL:       "#E50914",
+};
+function catAccent(cat: string): string {
+  return CAT_ACCENT[cat.toUpperCase()] ?? RED;
+}
+
 interface LogEntry {
   articleId: string; title: string; url: string; category: string;
   sourceType?: string; manualPost?: boolean; isBreaking?: boolean;
@@ -51,79 +73,98 @@ function Toast({ msg, type, onClose }: { msg: string; type: "ok" | "err"; onClos
   );
 }
 
-// ── Post Card (Netflix style) ─────────────────────────────────────────────────
+// ── Post Card ─────────────────────────────────────────────────────────────────
 function PostCard({ entry, onRetry, retries }: { entry: LogEntry; onRetry: (e: LogEntry, p: "instagram" | "facebook") => void; retries: Record<string, Retry> }) {
   const [hovered, setHovered] = useState(false);
   const igOk = entry.instagram.success || retries[entry.articleId + "_instagram"]?.done;
   const fbOk = entry.facebook.success || retries[entry.articleId + "_facebook"]?.done;
-  const catColor = entry.category === "CELEBRITY" ? PINK : entry.category === "MUSIC" ? "#a855f7" : entry.category === "TV & FILM" ? "#3b82f6" : entry.category === "FASHION" ? "#ec4899" : RED;
+  const accent = catAccent(entry.category);
 
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        flexShrink: 0, width: 200, borderRadius: 8, overflow: "hidden",
-        background: "#1f1f1f", border: "1px solid #2a2a2a",
+        flexShrink: 0,
+        width: 160,
+        borderRadius: 8,
+        overflow: "hidden",
+        background: "#1f1f1f",
+        border: "1px solid #2a2a2a",
         transition: "transform .2s ease, box-shadow .2s ease",
         transform: hovered ? "scale(1.05)" : "scale(1)",
         boxShadow: hovered ? "0 12px 40px rgba(0,0,0,.8)" : "none",
-        cursor: "pointer", position: "relative",
+        cursor: "pointer",
+        position: "relative",
       }}
     >
-      {/* Thumbnail placeholder */}
-      <div style={{ width: "100%", aspectRatio: "4/5", background: `linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)`, position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 11, color: catColor, letterSpacing: 2 }}>{entry.category}</div>
-          <div style={{ fontSize: 11, color: "#555", textAlign: "center", padding: "0 12px", lineHeight: 1.4 }}>{entry.title.slice(0, 60)}{entry.title.length > 60 ? "…" : ""}</div>
+      {/* ── Thumbnail area — 4:5 ratio ── */}
+      <div style={{ width: "100%", aspectRatio: "4/5", background: "linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)", position: "relative", overflow: "hidden" }}>
+
+        {/* Top category stripe — 3px */}
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent, zIndex: 2 }} />
+
+        {/* Centered category + title */}
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6, padding: "16px 10px 10px" }}>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 11, color: accent, letterSpacing: 2, textTransform: "uppercase" as const }}>{entry.category}</div>
+          <div style={{ fontSize: 10, color: "#555", textAlign: "center" as const, lineHeight: 1.4 }}>{entry.title.slice(0, 60)}{entry.title.length > 60 ? "…" : ""}</div>
         </div>
-        {/* Category stripe */}
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: catColor }} />
-        {/* Badges */}
-        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-          {entry.isBreaking && <span style={{ background: RED, color: "#fff", fontSize: 8, fontWeight: 800, padding: "2px 5px", borderRadius: 3, letterSpacing: 1 }}>BREAKING</span>}
-          {entry.manualPost && <span style={{ background: "#2a2a2a", color: "#888", fontSize: 8, fontWeight: 700, padding: "2px 5px", borderRadius: 3 }}>MANUAL</span>}
+
+        {/* Badges — top right */}
+        <div style={{ position: "absolute", top: 8, right: 6, display: "flex", flexDirection: "column" as const, gap: 3, alignItems: "flex-end", zIndex: 3 }}>
+          {entry.isBreaking && (
+            <span style={{ background: RED, color: "#fff", fontSize: 8, fontWeight: 800, padding: "2px 5px", borderRadius: 3, letterSpacing: 1 }}>BREAKING</span>
+          )}
+          {entry.manualPost && (
+            <span style={{ background: "#2a2a2a", color: "#888", fontSize: 8, fontWeight: 700, padding: "2px 5px", borderRadius: 3 }}>MANUAL</span>
+          )}
         </div>
+
+        {/* Hover overlay with retry buttons */}
+        {hovered && (!igOk || !fbOk) && (
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", flexDirection: "column" as const, alignItems: "center", justifyContent: "center", gap: 8, padding: 10, zIndex: 10 }}>
+            {!igOk && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRetry(entry, "instagram"); }}
+                disabled={retries[entry.articleId + "_instagram"]?.loading}
+                style={{ background: PINK, color: "#fff", border: "none", borderRadius: 5, padding: "7px 0", fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%" }}
+              >
+                {retries[entry.articleId + "_instagram"]?.loading ? "..." : "↺ Retry IG"}
+              </button>
+            )}
+            {!fbOk && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onRetry(entry, "facebook"); }}
+                disabled={retries[entry.articleId + "_facebook"]?.loading}
+                style={{ background: "#1877f2", color: "#fff", border: "none", borderRadius: 5, padding: "7px 0", fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%" }}
+              >
+                {retries[entry.articleId + "_facebook"]?.loading ? "..." : "↺ Retry FB"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-      {/* Info */}
-      <div style={{ padding: "10px 10px 8px" }}>
-        <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.4, marginBottom: 6, fontWeight: 500 }}>
+
+      {/* ── Info strip ── */}
+      <div style={{ padding: "8px 10px 8px" }}>
+        <div style={{ fontSize: 11, color: "#ccc", lineHeight: 1.4, marginBottom: 5, fontWeight: 500 }}>
           {entry.title.slice(0, 55)}{entry.title.length > 55 ? "…" : ""}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 10, color: "#444" }}>{ago(entry.postedAt)}</span>
+          <span style={{ fontSize: 10, color: "#888" }}>{ago(entry.postedAt)}</span>
           <div style={{ display: "flex", gap: 4 }}>
             <span style={{ fontSize: 10, color: igOk ? "#4ade80" : "#f87171" }}>IG{igOk ? "✓" : "✗"}</span>
             <span style={{ fontSize: 10, color: fbOk ? "#4ade80" : "#f87171" }}>FB{fbOk ? "✓" : "✗"}</span>
           </div>
         </div>
       </div>
-      {/* Hover overlay with retry */}
-      {hovered && (!igOk || !fbOk) && (
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 12 }}>
-          {!igOk && (
-            <button onClick={() => onRetry(entry, "instagram")}
-              disabled={retries[entry.articleId + "_instagram"]?.loading}
-              style={{ background: PINK, color: "#fff", border: "none", borderRadius: 5, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-              {retries[entry.articleId + "_instagram"]?.loading ? "..." : "↺ Retry IG"}
-            </button>
-          )}
-          {!fbOk && (
-            <button onClick={() => onRetry(entry, "facebook")}
-              disabled={retries[entry.articleId + "_facebook"]?.loading}
-              style={{ background: "#1877f2", color: "#fff", border: "none", borderRadius: 5, padding: "6px 14px", fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%" }}>
-              {retries[entry.articleId + "_facebook"]?.loading ? "..." : "↺ Retry FB"}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
 // ── Hero Banner ───────────────────────────────────────────────────────────────
 function HeroBanner({ entry, nextPostIn }: { entry: LogEntry | null; nextPostIn: string }) {
-  const catColor = entry?.category === "CELEBRITY" ? PINK : entry?.category === "MUSIC" ? "#a855f7" : RED;
+  const catColor = entry ? catAccent(entry.category) : RED;
   return (
     <div style={{
       position: "relative", width: "100%", minHeight: 280,
