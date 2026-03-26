@@ -5,26 +5,28 @@ import { PPP_LOGO_B64 } from "./ppp-logo-b64";
 
 const W = 1080, H = 1350;
 
-// ── Category colors — exactly matching reference images ───────────────────────
-// BUSINESS/AWARDS → yellow pill, black text (like the Tom Brady card)
-// ENTERTAINMENT/MUSIC → purple pill, white text (like the Mark Wahlberg card)
-// SPORTS → cyan/sky blue pill, black text (like the Turkey vs Romania card)
-// CELEBRITY/FASHION → hot pink pill, white text
-// TV & FILM → blue pill, white text
-// EVENTS → green pill, white text
+// ── Category colors — exact match to PPP TV site ─────────────────────────────
 const CAT_COLORS: Record<string, { bg: string; text: string }> = {
+  CELEBRITY:     { bg: "#FF007A", text: "#FFFFFF" },
+  FASHION:       { bg: "#ec4899", text: "#FFFFFF" },
+  MUSIC:         { bg: "#a855f7", text: "#FFFFFF" },
+  "TV & FILM":   { bg: "#f59e0b", text: "#000000" },
+  MOVIES:        { bg: "#f59e0b", text: "#000000" },
+  LIFESTYLE:     { bg: "#14b8a6", text: "#FFFFFF" },
+  EVENTS:        { bg: "#10b981", text: "#FFFFFF" },
+  "EAST AFRICA": { bg: "#06b6d4", text: "#000000" },
+  COMEDY:        { bg: "#eab308", text: "#000000" },
+  INFLUENCERS:   { bg: "#f97316", text: "#FFFFFF" },
+  SPORTS:        { bg: "#3b82f6", text: "#FFFFFF" },
   BUSINESS:      { bg: "#FFD700", text: "#000000" },
   AWARDS:        { bg: "#FFD700", text: "#000000" },
-  ENTERTAINMENT: { bg: "#9B30FF", text: "#FFFFFF" },
-  MUSIC:         { bg: "#9B30FF", text: "#FFFFFF" },
-  SPORTS:        { bg: "#00BFFF", text: "#000000" },
-  CELEBRITY:     { bg: "#FF007A", text: "#FFFFFF" },
-  FASHION:       { bg: "#FF007A", text: "#FFFFFF" },
-  "TV & FILM":   { bg: "#3B82F6", text: "#FFFFFF" },
-  EVENTS:        { bg: "#22C55E", text: "#FFFFFF" },
-  "EAST AFRICA": { bg: "#F97316", text: "#FFFFFF" },
+  ENTERTAINMENT: { bg: "#a855f7", text: "#FFFFFF" },
+  POLITICS:      { bg: "#FF007A", text: "#FFFFFF" },
+  NEWS:          { bg: "#FF007A", text: "#FFFFFF" },
+  TECHNOLOGY:    { bg: "#06b6d4", text: "#000000" },
+  HEALTH:        { bg: "#10b981", text: "#FFFFFF" },
+  SCIENCE:       { bg: "#3b82f6", text: "#FFFFFF" },
   GENERAL:       { bg: "#E50914", text: "#FFFFFF" },
-  NEWS:          { bg: "#E50914", text: "#FFFFFF" },
 };
 
 function getCatColor(category: string): { bg: string; text: string } {
