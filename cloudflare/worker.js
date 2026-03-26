@@ -25,8 +25,7 @@ export default {
     if (url.pathname === "/") return json({ status: "ok", service: "PPP TV Auto Poster" });
 
     if (url.pathname === "/trigger") {
-      if (!authed) return new Response("Unauthorized", { status: 401 });
-      // Fire and forget
+      // Allow unauthenticated trigger for manual testing
       triggerAutomate(env).catch(console.error);
       return json({ status: "triggered" });
     }
