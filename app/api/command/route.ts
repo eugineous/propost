@@ -11,6 +11,7 @@ import { CommandRequest, CommandResponse, Corp } from '@/lib/types'
 import { db } from '@/lib/db'
 import { agentActions } from '@/lib/schema'
 import { randomUUID } from 'crypto'
+import { processInstagramBacklog } from '@/lib/instagramBacklog'
 
 // Keyword-based fallback routing when Gemini is unavailable
 function keywordRoute(text: string): { targetCorp: Corp; targetAgent: string; intent: string } {
@@ -92,8 +93,14 @@ export async function POST(req: NextRequest) {
   // Dispatch to agent (if not pending human)
   if (status !== 'needs_human') {
     try {
-      const dispatch = await dispatchToAgent(targetCorp, targetAgent, { text: body.text })
-      preview = dispatch.preview
+      // Deterministic execution for known high-impact commands (so commands always "do the thing")
+      if (intent === 'reply_dms') {
+        const result = await processInstagramBacklog({ runBy: 'command', maxReplies: 15, maxConversations: 50 })
+        preview = `CHAT: replied ${result.replied}/${result.processed} (scanned ${result.scanned})`
+      } else {
+        const dispatch = await dispatchToAgent(targetCorp, targetAgent, { text: body.text })
+        preview = dispatch.preview
+      }
     } catch (err) {
       console.error('[command] dispatch error:', err)
       preview = `Dispatch error: ${String(err).slice(0, 100)}`

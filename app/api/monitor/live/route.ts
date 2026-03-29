@@ -5,6 +5,31 @@ import { db } from '@/lib/db'
 import { agentActions, posts, trends } from '@/lib/schema'
 import { desc, gte, sql } from 'drizzle-orm'
 
+function actionPreview(actionType: string, details: Record<string, unknown>): string {
+  if (actionType === 'dm_backlog_reply') {
+    const u = (details.senderUsername as string) ?? 'unknown'
+    const sent = details.sent === false ? 'FAILED' : 'sent'
+    const isBrand = details.isBrandDeal ? ' • brand' : ''
+    const msg = (details.messagePreview as string) ?? ''
+    return `@${u} • ${sent}${isBrand} • "${msg.slice(0, 60)}"`
+  }
+  if (actionType === 'dm_backlog_summary') {
+    return String(details.summary ?? 'DM backlog summary').slice(0, 120)
+  }
+  if (actionType === 'post_published') {
+    const url = (details.url as string) ?? ''
+    const snippet = (details.content as string) ?? (details.caption as string) ?? ''
+    return `${snippet.slice(0, 80)}${url ? ` • ${url}` : ''}`
+  }
+  if (actionType === 'command_dispatched') {
+    const text = (details.text as string) ?? ''
+    const corp = (details.targetCorp as string) ?? ''
+    const agent = (details.targetAgent as string) ?? ''
+    return `→ ${corp}/${agent}: "${text.slice(0, 80)}"`
+  }
+  return String(details.summary ?? details.message ?? details.response ?? actionType).slice(0, 120)
+}
+
 export async function GET() {
   try {
     const now = new Date()
@@ -112,9 +137,7 @@ export async function GET() {
         createdAt: a.createdAt,
         outputPreview: (() => {
           const d = (a.details ?? {}) as Record<string, unknown>
-          return String(
-            d.summary ?? d.message ?? d.response ?? a.actionType
-          ).slice(0, 100)
+          return actionPreview(a.actionType, d).slice(0, 100)
         })(),
       })),
     })
