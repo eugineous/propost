@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
 type Platform = 'x' | 'instagram' | 'linkedin' | 'facebook'
-type ContentStatus = 'draft' | 'approved' | 'scheduled' | 'published'
+type ContentStatus = 'draft' | 'approved' | 'scheduled' | 'published' | 'blocked' | 'failed'
 
 interface ContentItem {
   id: string
@@ -38,6 +38,8 @@ const STATUS_COLORS: Record<ContentStatus, string> = {
   approved: '#22C55E',
   scheduled: '#818CF8',
   published: '#64748B',
+  blocked: '#EF4444',
+  failed: '#F97316',
 }
 
 const MOCK_CONTENT: ContentItem[] = [
@@ -258,10 +260,30 @@ export default function ContentPage() {
 
   const handleApprove = async (id: string) => {
     setItems(prev => prev.map(i => i.id === id ? { ...i, status: 'approved' as ContentStatus } : i))
+    try {
+      const res = await fetch('/api/content', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'approve' }),
+      })
+      const json = await res.json() as { ok: boolean; item?: any }
+      if (json.ok && json.item) {
+        await fetchContent()
+      } else {
+        await fetchContent()
+      }
+    } catch {
+      // keep optimistic UI
+    }
   }
 
   const handleReject = async (id: string) => {
     setItems(prev => prev.filter(i => i.id !== id))
+    try {
+      await fetch(`/api/content?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    } catch {
+      // keep optimistic UI
+    }
   }
 
   const handleCreate = (item: Partial<ContentItem>) => {

@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { hawkReview } from '@/lib/hawk'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -56,7 +57,22 @@ Return ONLY valid JSON:
       }
     }
 
-    return NextResponse.json({ ok: true, versions })
+    // Run HAWK across versions (platform-specific guardrails)
+    const reviews = await Promise.allSettled([
+      hawkReview(versions.x ?? '', 'x', 'sovereign'),
+      hawkReview(versions.instagram ?? '', 'instagram', 'sovereign'),
+      hawkReview(versions.linkedin ?? '', 'linkedin', 'sovereign'),
+      hawkReview(versions.facebook ?? '', 'facebook', 'sovereign'),
+    ])
+
+    const hawk = {
+      x: reviews[0].status === 'fulfilled' ? reviews[0].value : null,
+      instagram: reviews[1].status === 'fulfilled' ? reviews[1].value : null,
+      linkedin: reviews[2].status === 'fulfilled' ? reviews[2].value : null,
+      facebook: reviews[3].status === 'fulfilled' ? reviews[3].value : null,
+    }
+
+    return NextResponse.json({ ok: true, versions, hawk })
   } catch (err) {
     console.error('[content/repurpose]', err)
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })

@@ -7,6 +7,7 @@ import { postTweet } from '@/lib/platforms/x'
 import { incrementRateLimit } from '@/lib/agentState'
 import { db } from '@/lib/db'
 import { posts, agentActions } from '@/lib/schema'
+import { and, asc, eq, lte } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
   if (!validateCronSecret(req)) {
@@ -14,6 +15,46 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // 1) Publish any scheduled post that's due
+    const now = new Date()
+    const [due] = await db
+      .select()
+      .from(posts)
+      .where(and(eq(posts.platform, 'x'), eq(posts.status, 'scheduled'), lte(posts.scheduledAt, now)))
+      .orderBy(asc(posts.scheduledAt))
+      .limit(1)
+
+    if (due) {
+      // Safety: if not hawk approved, run review now.
+      if (!due.hawkApproved) {
+        const decision = await hawkReview(due.content, 'x', due.agentName)
+        if (!decision.approved) {
+          await db.update(posts).set({ status: 'blocked', hawkApproved: false, hawkRiskScore: decision.riskScore }).where(eq(posts.id, due.id))
+          return NextResponse.json({ ok: false, reason: 'HAWK blocked scheduled post', blockedReasons: decision.blockedReasons })
+        }
+        await db.update(posts).set({ hawkApproved: true, hawkRiskScore: decision.riskScore }).where(eq(posts.id, due.id))
+      }
+
+      const { tweetId, url } = await postTweet(due.content)
+      await incrementRateLimit(due.agentName, 'postsToday')
+
+      await db.update(posts).set({
+        status: 'published',
+        platformId: tweetId,
+        publishedAt: now,
+      }).where(eq(posts.id, due.id))
+
+      await db.insert(agentActions).values({
+        agentName: due.agentName,
+        company: 'xforce',
+        actionType: 'post_published',
+        details: { tweetId, url, postId: due.id, content: due.content.slice(0, 100) },
+        outcome: 'success',
+      })
+
+      return NextResponse.json({ ok: true, mode: 'scheduled', tweetId, url, postId: due.id })
+    }
+
     // Run BLAZE to generate content
     const blazeResult = await blazeRun('Generate a tweet for Eugine Micah based on current trends and content pillars')
 
