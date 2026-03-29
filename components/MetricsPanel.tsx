@@ -13,6 +13,8 @@ interface PlatformData {
   posts: number | null
   dms: number | null
   error?: string
+  connected: boolean
+  lastSync?: string
 }
 
 interface LiveMetrics {
@@ -30,43 +32,76 @@ const X_GOAL = 5_000_000
 export default function MetricsPanel() {
   const [data, setData] = useState<LiveMetrics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [lastPulse, setLastPulse] = useState(0)
+  const [igError, setIgError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    setLastPulse(Date.now())
     try {
-      // Fetch live data from all sources in parallel
       const [igRes, monRes] = await Promise.allSettled([
         fetch('/api/monitor/ig-live'),
         fetch('/api/monitor/live'),
       ])
 
-      const ig = igRes.status === 'fulfilled' && igRes.value.ok
-        ? await igRes.value.json() as { ok: boolean; followers?: number; mediaCount?: number; username?: string; dmCount?: number; recentPosts?: Array<{ likes: number; comments: number }> }
-        : null
+      interface IgResponse {
+        ok: boolean
+        error?: string
+        account?: { followers: number; mediaCount: number; username: string }
+        followers?: number
+        mediaCount?: number
+        username?: string
+        dmsPending?: number
+        dmCount?: number
+        recentPosts?: Array<{ likes: number; comments: number }>
+      }
+
+      let ig: IgResponse | null = null
+      let igFetchError: string | null = null
+
+      if (igRes.status === 'fulfilled') {
+        const parsed = await igRes.value.json() as IgResponse
+        if (parsed?.ok) {
+          ig = parsed
+          setIgError(null)
+        } else {
+          igFetchError = parsed?.error ?? 'Instagram API error'
+          setIgError(igFetchError)
+        }
+      } else {
+        igFetchError = 'Failed to reach Instagram API'
+        setIgError(igFetchError)
+      }
 
       const mon = monRes.status === 'fulfilled' && monRes.value.ok
         ? await monRes.value.json() as { ok: boolean; totalActionsToday?: number; postsToday?: number; trendsToday?: number }
         : null
 
-      // Calculate Instagram engagement from recent posts
+      // Normalize ig response shape (supports both flat and nested)
+      const igFollowers = ig?.account?.followers ?? ig?.followers ?? null
+      const igMediaCount = ig?.account?.mediaCount ?? ig?.mediaCount ?? null
+      const igDms = ig?.dmsPending ?? ig?.dmCount ?? null
+      const igUsername = ig?.account?.username ?? ig?.username ?? null
+
       let igEngagement: number | null = null
-      if (ig?.recentPosts && ig.recentPosts.length > 0) {
+      if (ig?.recentPosts && ig.recentPosts.length > 0 && igFollowers) {
         const totalEng = ig.recentPosts.reduce((s: number, p: { likes: number; comments: number }) => s + p.likes + p.comments, 0)
-        igEngagement = ig.followers ? (totalEng / ig.recentPosts.length / ig.followers) * 100 : null
+        igEngagement = (totalEng / ig.recentPosts.length / igFollowers) * 100
       }
+
+      const now = new Date().toLocaleTimeString('en-KE')
 
       const platforms: PlatformData[] = [
         {
           platform: 'instagram',
-          label: 'Instagram',
+          label: igUsername ? `Instagram (@${igUsername})` : 'Instagram',
           icon: '📸',
           color: '#E1306C',
-          followers: ig?.followers ?? null,
-          impressions: ig?.mediaCount ?? null,
+          followers: igFollowers,
+          impressions: igMediaCount,
           engagement: igEngagement,
-          posts: ig?.mediaCount ?? null,
-          dms: ig?.dmCount ?? null,
+          posts: igMediaCount,
+          dms: igDms,
+          error: igFetchError ?? undefined,
+          connected: ig !== null,
+          lastSync: ig ? now : undefined,
         },
         {
           platform: 'x',
@@ -78,6 +113,7 @@ export default function MetricsPanel() {
           engagement: null,
           posts: mon?.postsToday ?? null,
           dms: null,
+          connected: false,
         },
         {
           platform: 'linkedin',
@@ -89,6 +125,7 @@ export default function MetricsPanel() {
           engagement: null,
           posts: null,
           dms: null,
+          connected: false,
         },
         {
           platform: 'facebook',
@@ -100,6 +137,7 @@ export default function MetricsPanel() {
           engagement: null,
           posts: null,
           dms: null,
+          connected: false,
         },
       ]
 
@@ -110,7 +148,7 @@ export default function MetricsPanel() {
         actionsToday: mon?.totalActionsToday ?? 0,
         postsToday: mon?.postsToday ?? 0,
         trendsToday: mon?.trendsToday ?? 0,
-        lastUpdated: new Date().toLocaleTimeString('en-KE'),
+        lastUpdated: now,
       })
     } catch (err) {
       console.error('[MetricsPanel]', err)
@@ -186,7 +224,22 @@ export default function MetricsPanel() {
                   {p.dms} DMs
                 </span>
               )}
+              {!p.connected && (
+                <span className="ml-auto rounded px-1 py-0.5 cursor-pointer" style={{ background: '#1E1E3A', color: '#64748B', fontSize: 7, fontFamily: 'monospace', border: '1px solid #334155' }}>
+                  Connect
+                </span>
+              )}
             </div>
+
+            {/* Error state */}
+            {p.error && (
+              <div className="mb-1 rounded px-2 py-1" style={{ background: '#EF444411', border: '1px solid #EF444433' }}>
+                <span style={{ fontSize: 7, color: '#EF4444', fontFamily: 'monospace' }}>
+                  ⚠ {p.error.slice(0, 80)}
+                </span>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
               <div className="flex justify-between">
                 <span style={{ fontSize: 8, color: '#64748B' }}>Followers</span>
@@ -207,8 +260,26 @@ export default function MetricsPanel() {
                 <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.impressions)}</span>
               </div>
             </div>
+
+            {p.lastSync && (
+              <div className="mt-1" style={{ fontSize: 7, color: '#334155', fontFamily: 'monospace' }}>
+                synced {p.lastSync}
+              </div>
+            )}
           </div>
         ))
+      )}
+
+      {/* Instagram error banner */}
+      {igError && !loading && (
+        <div className="rounded p-2" style={{ background: '#EF444411', border: '1px solid #EF444433' }}>
+          <div style={{ fontSize: 7, color: '#EF4444', fontFamily: 'monospace' }}>
+            Instagram API: {igError.slice(0, 120)}
+          </div>
+          <div style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace', marginTop: 2 }}>
+            Check INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID in Vercel env vars
+          </div>
+        </div>
       )}
 
       {/* X Monetization */}

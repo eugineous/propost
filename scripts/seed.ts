@@ -49,8 +49,22 @@ async function seed() {
     ON CONFLICT DO NOTHING
   `
 
+  // Seed HRForce Corp startup actions
+  await sql`
+    INSERT INTO agent_actions (agent_name, company, action_type, details, outcome)
+    VALUES 
+      ('people', 'hrforce', 'empire_startup', '{"message":"HRForce Corp online. People, Welfare, Rotate, Discipline, Reward, Brief agents ready.","version":"2.0"}', 'success'),
+      ('welfare', 'hrforce', 'wellness_check', '{"summary":"All 31 agents reporting healthy workload levels. No burnout signals detected."}', 'success'),
+      ('judge', 'legalshield', 'empire_startup', '{"message":"LegalShield Corp online. Judge, Policy, Risk, Shadow agents ready.","version":"2.0"}', 'success'),
+      ('risk', 'legalshield', 'risk_assessment', '{"summary":"Platform compliance risk: LOW. All content policies up to date.","riskLevel":"low"}', 'success'),
+      ('banker', 'financedesk', 'empire_startup', '{"message":"FinanceDesk Corp online. Banker, Deal, Rate, Pitch agents ready.","version":"2.0"}', 'success'),
+      ('pitch', 'financedesk', 'pitch_prepared', '{"summary":"3 brand partnership pitches ready for review. Estimated combined value: KES 450,000."}', 'success')
+    ON CONFLICT DO NOTHING
+  `
+
   console.log('✅ Database seeded successfully!')
   console.log('Tables populated: agent_actions, daily_metrics, trends')
+  console.log('New corps: HRForce, LegalShield, FinanceDesk')
 }
 
 seed().catch(console.error)
