@@ -7,6 +7,7 @@ import { desc, gte } from 'drizzle-orm'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getDMs, replyToDM } from '@/lib/platforms/instagram'
 import { dispatchToAgent, AGENT_CORP_LOOKUP } from '@/lib/agentDispatch'
+import { setAgentActive, setAgentIdle, setAgentError } from '@/lib/agentState'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -234,19 +235,29 @@ export async function POST(req: NextRequest) {
       try {
         switch (agent.toUpperCase()) {
           case 'CHAT':
+            await setAgentActive('chat', 'work_loop')
             results.CHAT = await runChat()
+            await setAgentIdle('chat', 'work_loop_complete')
             break
           case 'BLAZE':
+            await setAgentActive('blaze', 'work_loop')
             results.BLAZE = await runBlaze()
+            await setAgentIdle('blaze', 'work_loop_complete')
             break
           case 'SCOUT':
+            await setAgentActive('scout', 'work_loop')
             results.SCOUT = await runScout()
+            await setAgentIdle('scout', 'work_loop_complete')
             break
           case 'SCRIBE':
+            await setAgentActive('scribe', 'work_loop')
             results.SCRIBE = await runScribe()
+            await setAgentIdle('scribe', 'work_loop_complete')
             break
           case 'MEMORY':
+            await setAgentActive('memory', 'work_loop')
             results.MEMORY = await runMemory()
+            await setAgentIdle('memory', 'work_loop_complete')
             break
           default: {
             // Generic dispatch — works for all 80 agents via agentDispatch
@@ -254,11 +265,13 @@ export async function POST(req: NextRequest) {
             const corp = AGENT_CORP_LOOKUP[agentLower]
             if (corp) {
               const t = Date.now()
+              await setAgentActive(agentLower, 'work_loop')
               const res = await dispatchToAgent(corp, agentLower, { task: 'Run your primary duty for ProPost Empire' })
               await logAction(agentLower, corp, 'agent_work', {
                 summary: res.preview ?? 'Task executed',
                 task: 'primary_duty',
               }, 'success', 0, Date.now() - t)
+              await setAgentIdle(agentLower, 'work_loop_complete')
               results[agent.toUpperCase()] = { agent: agent.toUpperCase(), preview: res.preview }
             } else {
               errors[agent] = 'Unknown agent'
@@ -267,6 +280,10 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (err) {
+        const lower = agent.toLowerCase()
+        if (AGENT_CORP_LOOKUP[lower]) {
+          await setAgentError(lower, 'work_loop_failed')
+        }
         errors[agent] = String(err)
         console.error(`[work/${agent}] error:`, err)
       }

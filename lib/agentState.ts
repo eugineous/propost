@@ -3,6 +3,8 @@
 // ============================================================
 
 import { AgentStateKV, Corp } from '@/lib/types'
+import { db } from '@/lib/db'
+import { agentActions } from '@/lib/schema'
 
 const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID!
 const CF_KV_AGENT_STATE_ID = process.env.CF_KV_AGENT_STATE_ID!
@@ -13,6 +15,9 @@ const KV_BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_
 const DEFAULT_STATE: AgentStateKV = {
   lastRunAt: '',
   lastOutcome: '',
+  currentState: 'idle',
+  previousState: 'idle',
+  stateChangedAt: new Date(0).toISOString(),
   rateLimitCounters: { postsToday: 0, repliesToday: 0, followsToday: 0 },
   isPaused: false,
 }
@@ -58,14 +63,78 @@ export async function setAgentState(agentName: string, patch: Partial<AgentState
   await kvPut(agentKey(agentName), updated)
 }
 
+async function emitAgentStateChange(
+  agentName: string,
+  prevState: string,
+  newState: string,
+  reason?: string
+): Promise<void> {
+  const company = Object.entries(CORP_AGENT_MAP).find(([, agents]) => agents.includes(agentName))?.[0] ?? 'intelcore'
+  await db.insert(agentActions).values({
+    agentName,
+    company,
+    actionType: 'agent_state_change',
+    details: {
+      summary: `${agentName} ${prevState} -> ${newState}${reason ? ` (${reason})` : ''}`,
+      prevState,
+      newState,
+      reason: reason ?? null,
+    },
+    outcome: 'success',
+  })
+}
+
+async function transitionAgentState(
+  agentName: string,
+  newState: 'idle' | 'active' | 'blocked' | 'error' | 'paused',
+  reason?: string
+): Promise<void> {
+  const current = await getAgentState(agentName)
+  const prev = current.currentState ?? 'idle'
+  const now = new Date().toISOString()
+  await kvPut(agentKey(agentName), {
+    ...current,
+    previousState: prev,
+    currentState: newState,
+    stateChangedAt: now,
+    isPaused: newState === 'paused' ? true : current.isPaused,
+    pauseReason: newState === 'paused' ? reason : current.pauseReason,
+  })
+  await emitAgentStateChange(agentName, prev, newState, reason)
+}
+
+export async function setAgentActive(agentName: string, reason?: string): Promise<void> {
+  await transitionAgentState(agentName, 'active', reason)
+}
+
+export async function setAgentIdle(agentName: string, reason?: string): Promise<void> {
+  await transitionAgentState(agentName, 'idle', reason)
+}
+
+export async function setAgentBlocked(agentName: string, reason?: string): Promise<void> {
+  await transitionAgentState(agentName, 'blocked', reason)
+}
+
+export async function setAgentError(agentName: string, reason?: string): Promise<void> {
+  await transitionAgentState(agentName, 'error', reason)
+}
+
 export async function pauseAgent(agentName: string, reason: string): Promise<void> {
-  await setAgentState(agentName, { isPaused: true, pauseReason: reason })
+  await transitionAgentState(agentName, 'paused', reason)
 }
 
 export async function resumeAgent(agentName: string): Promise<void> {
   const current = await getAgentState(agentName)
-  const updated: AgentStateKV = { ...current, isPaused: false, pauseReason: undefined }
+  const updated: AgentStateKV = {
+    ...current,
+    isPaused: false,
+    pauseReason: undefined,
+    previousState: current.currentState ?? 'paused',
+    currentState: 'idle',
+    stateChangedAt: new Date().toISOString(),
+  }
   await kvPut(agentKey(agentName), updated)
+  await emitAgentStateChange(agentName, current.currentState ?? 'paused', 'idle', 'resume')
 }
 
 export async function incrementRateLimit(

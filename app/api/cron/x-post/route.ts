@@ -48,7 +48,13 @@ export async function GET(req: NextRequest) {
         agentName: due.agentName,
         company: 'xforce',
         actionType: 'post_published',
-        details: { tweetId, url, postId: due.id, content: due.content.slice(0, 100) },
+        details: {
+          platform: 'x',
+          platformPostId: tweetId,
+          platformUrl: url,
+          postId: due.id,
+          contentPreview: due.content.slice(0, 160),
+        },
         outcome: 'success',
       })
 
@@ -103,7 +109,12 @@ export async function GET(req: NextRequest) {
       agentName: 'blaze',
       company: 'xforce',
       actionType: 'post_published',
-      details: { tweetId, url, content: content.slice(0, 100) },
+      details: {
+        platform: 'x',
+        platformPostId: tweetId,
+        platformUrl: url,
+        contentPreview: content.slice(0, 160),
+      },
       outcome: 'success',
     })
 

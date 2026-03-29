@@ -6,20 +6,42 @@ import { agentActions, posts, trends } from '@/lib/schema'
 import { desc, gte, sql } from 'drizzle-orm'
 
 function actionPreview(actionType: string, details: Record<string, unknown>): string {
-  if (actionType === 'dm_backlog_reply') {
+  if (actionType === 'dm_replied' || actionType === 'dm_backlog_reply') {
     const u = (details.senderUsername as string) ?? 'unknown'
     const sent = details.sent === false ? 'FAILED' : 'sent'
     const isBrand = details.isBrandDeal ? ' • brand' : ''
-    const msg = (details.messagePreview as string) ?? ''
-    return `@${u} • ${sent}${isBrand} • "${msg.slice(0, 60)}"`
+    const msg = (details.senderMessage as string) ?? (details.messagePreview as string) ?? ''
+    const location = (details.messageLocation as string) ?? 'inbox'
+    return `@${u} (${location}) • ${sent}${isBrand} • "${msg.slice(0, 60)}"`
+  }
+  if (actionType === 'comment_replied') {
+    const u = (details.commenterUsername as string) ?? 'unknown'
+    const c = (details.originalComment as string) ?? ''
+    return `Comment reply to @${u}: "${c.slice(0, 60)}"`
+  }
+  if (actionType === 'comment_moderated') {
+    const u = (details.commenterUsername as string) ?? 'unknown'
+    const a = (details.moderationAction as string) ?? 'moderated'
+    return `Comment ${a} for @${u}`
   }
   if (actionType === 'dm_backlog_summary') {
     return String(details.summary ?? 'DM backlog summary').slice(0, 120)
   }
   if (actionType === 'post_published') {
-    const url = (details.url as string) ?? ''
-    const snippet = (details.content as string) ?? (details.caption as string) ?? ''
+    const url = (details.platformUrl as string) ?? (details.url as string) ?? ''
+    const snippet =
+      (details.contentPreview as string) ??
+      (details.content as string) ??
+      (details.caption as string) ??
+      ''
     return `${snippet.slice(0, 80)}${url ? ` • ${url}` : ''}`
+  }
+  if (actionType === 'post_failed') {
+    const reason = (details.failureReason as string) ?? (details.error as string) ?? 'publish failed'
+    return `Post failed: ${reason.slice(0, 90)}`
+  }
+  if (actionType === 'agent_state_change') {
+    return String(details.summary ?? 'Agent state changed').slice(0, 120)
   }
   if (actionType === 'command_dispatched') {
     const text = (details.text as string) ?? ''

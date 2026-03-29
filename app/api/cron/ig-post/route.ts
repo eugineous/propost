@@ -50,7 +50,12 @@ export async function GET(req: NextRequest) {
         agentName: due.agentName,
         company: 'gramgod',
         actionType: 'post_published',
-        details: { postId, scheduledPostId: due.id, caption: due.content.slice(0, 100) },
+        details: {
+          platform: 'instagram',
+          platformPostId: postId,
+          scheduledPostId: due.id,
+          contentPreview: due.content.slice(0, 160),
+        },
         outcome: 'success',
       })
 
@@ -111,7 +116,11 @@ export async function GET(req: NextRequest) {
       agentName: 'aurora',
       company: 'gramgod',
       actionType: 'post_published',
-      details: { postId, caption: caption.slice(0, 100) },
+      details: {
+        platform: 'instagram',
+        platformPostId: postId,
+        contentPreview: caption.slice(0, 160),
+      },
       outcome: 'success',
     })
 

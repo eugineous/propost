@@ -20,7 +20,12 @@ export type AgentOutcome = 'success' | 'blocked' | 'error' | 'pending_human'
 export type ActivityEventType =
   | 'agent_action'
   | 'post_published'
+  | 'post_failed'
   | 'dm_received'
+  | 'dm_replied'
+  | 'comment_replied'
+  | 'comment_moderated'
+  | 'agent_state_change'
   | 'trend_detected'
   | 'crisis_alert'
   | 'hawk_block'
@@ -77,6 +82,9 @@ export interface CommandRoute {
 export interface AgentStateKV {
   lastRunAt: string
   lastOutcome: string
+  currentState?: 'idle' | 'active' | 'blocked' | 'error' | 'paused'
+  previousState?: 'idle' | 'active' | 'blocked' | 'error' | 'paused'
+  stateChangedAt?: string
   rateLimitCounters: {
     postsToday: number
     repliesToday: number

@@ -47,7 +47,12 @@ export async function GET(req: NextRequest) {
         agentName: due.agentName,
         company: 'linkedelite',
         actionType: 'post_published',
-        details: { postId, scheduledPostId: due.id, content: due.content.slice(0, 100) },
+        details: {
+          platform: 'linkedin',
+          platformPostId: postId,
+          scheduledPostId: due.id,
+          contentPreview: due.content.slice(0, 160),
+        },
         outcome: 'success',
       })
 
@@ -102,7 +107,11 @@ export async function GET(req: NextRequest) {
       agentName: 'nova',
       company: 'linkedelite',
       actionType: 'post_published',
-      details: { postId, content: content.slice(0, 100) },
+      details: {
+        platform: 'linkedin',
+        platformPostId: postId,
+        contentPreview: content.slice(0, 160),
+      },
       outcome: 'success',
     })
 
