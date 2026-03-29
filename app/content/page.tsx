@@ -16,6 +16,9 @@ interface ContentItem {
   publishedAt?: string
   performanceScore?: number
   agentName?: string
+  hawkApproved?: boolean
+  hawkRiskScore?: number
+  blockedReason?: string
   createdAt: string
 }
 
@@ -237,6 +240,8 @@ export default function ContentPage() {
   const [repurposeItem, setRepurposeItem] = useState<ContentItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [seedingEmergency, setSeedingEmergency] = useState(false)
+  const [scheduling, setScheduling] = useState<Record<string, boolean>>({})
+  const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({})
 
   const fetchContent = useCallback(async () => {
     setLoading(true)
@@ -287,6 +292,22 @@ export default function ContentPage() {
     }
   }
 
+  const handleSchedule = async (id: string) => {
+    const value = scheduleInputs[id]
+    if (!value) return
+    setScheduling((s) => ({ ...s, [id]: true }))
+    try {
+      await fetch('/api/content', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'schedule', scheduledAt: value }),
+      })
+      await fetchContent()
+    } finally {
+      setScheduling((s) => ({ ...s, [id]: false }))
+    }
+  }
+
   const handleCreate = (item: Partial<ContentItem>) => {
     setItems(prev => [{ ...item, id: item.id ?? Date.now().toString(), status: 'draft', createdAt: new Date().toISOString() } as ContentItem, ...prev])
   }
@@ -314,6 +335,25 @@ export default function ContentPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setLoading(true)
+                try {
+                  await fetch('/api/content/calendar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ days: 30 }),
+                  })
+                  await fetchContent()
+                } finally {
+                  setLoading(false)
+                }
+              }}
+              className="px-3 py-2 rounded"
+              style={{ background: '#818CF822', color: '#818CF8', border: '1px solid #818CF844', fontSize: 10, fontFamily: 'monospace', fontWeight: 700 }}
+            >
+              📅 BUILD 30-DAY CALENDAR
+            </button>
             <button
               onClick={async () => {
                 setSeedingEmergency(true)
@@ -437,12 +477,18 @@ export default function ContentPage() {
               {item.agentName && <span>🤖 {item.agentName}</span>}
               {item.scheduledAt && <span>⏰ {new Date(item.scheduledAt).toLocaleString('en-KE', { timeZone: 'Africa/Nairobi', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>}
               {item.publishedAt && <span>✅ {new Date(item.publishedAt).toLocaleDateString('en-KE')}</span>}
+              {item.hawkRiskScore !== undefined && <span style={{ color: item.hawkRiskScore >= 70 ? '#EF4444' : item.hawkRiskScore >= 40 ? '#FBBF24' : '#22C55E' }}>🛡️ risk {item.hawkRiskScore}</span>}
               {item.performanceScore !== undefined && item.performanceScore > 0 && (
                 <span style={{ color: item.performanceScore >= 80 ? '#22C55E' : item.performanceScore >= 50 ? '#FBBF24' : '#EF4444' }}>
                   ⚡ {item.performanceScore}
                 </span>
               )}
             </div>
+            {item.status === 'blocked' && item.blockedReason && (
+              <div className="rounded px-2 py-1" style={{ background: '#EF444422', border: '1px solid #EF444444', color: '#FCA5A5', fontSize: 8, fontFamily: 'monospace' }}>
+                BLOCKED: {item.blockedReason}
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex items-center gap-2 pt-1 border-t" style={{ borderColor: '#2D2D4A' }}>
@@ -461,6 +507,25 @@ export default function ContentPage() {
                     style={{ background: '#EF444422', color: '#EF4444', border: '1px solid #EF444444', fontSize: 9, fontFamily: 'monospace' }}
                   >
                     ✕ REJECT
+                  </button>
+                </>
+              )}
+              {(item.status === 'approved' || item.status === 'draft') && (
+                <>
+                  <input
+                    type="datetime-local"
+                    value={scheduleInputs[item.id] ?? ''}
+                    onChange={(e) => setScheduleInputs((v) => ({ ...v, [item.id]: e.target.value }))}
+                    className="rounded px-1 py-1"
+                    style={{ background: '#0A0A14', border: '1px solid #2D2D4A', color: '#E2E8F0', fontSize: 8, fontFamily: 'monospace' }}
+                  />
+                  <button
+                    onClick={() => handleSchedule(item.id)}
+                    disabled={scheduling[item.id] || !(scheduleInputs[item.id] ?? '').trim()}
+                    className="px-2 py-1 rounded disabled:opacity-50"
+                    style={{ background: '#818CF822', color: '#818CF8', border: '1px solid #818CF844', fontSize: 9, fontFamily: 'monospace' }}
+                  >
+                    {scheduling[item.id] ? 'SCHED...' : '⏰ SCHEDULE'}
                   </button>
                 </>
               )}

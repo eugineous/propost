@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
         ? Math.min(100, Math.round(((row.likes ?? 0) + (row.reposts ?? 0) * 2 + (row.replies ?? 0)) / Math.max(1, Number(row.impressions)) * 1000))
         : 0,
       agentName: row.agentName,
+      hawkApproved: Boolean(row.hawkApproved),
+      hawkRiskScore: row.hawkRiskScore ?? undefined,
+      blockedReason: row.lessonsExtracted ?? undefined,
       createdAt: row.createdAt?.toISOString() ?? new Date().toISOString(),
     }))
 
@@ -122,6 +125,7 @@ export async function PATCH(req: NextRequest) {
           status: 'blocked',
           hawkApproved: false,
           hawkRiskScore: decision.riskScore,
+          lessonsExtracted: decision.blockedReasons.join(' | '),
         }).where(eq(posts.id, id)).returning()
         return NextResponse.json({ ok: true, item: updated, hawk: decision })
       }
@@ -130,6 +134,7 @@ export async function PATCH(req: NextRequest) {
         status: 'approved',
         hawkApproved: true,
         hawkRiskScore: decision.riskScore,
+        lessonsExtracted: null,
       }).where(eq(posts.id, id)).returning()
       return NextResponse.json({ ok: true, item: updated, hawk: decision })
     }
