@@ -99,3 +99,24 @@ export interface SchedulerResponse {
   skipped: number;
   errors: Array<{ articleId: string; message: string }>;
 }
+
+export type OfficeCategory =
+  | "physical"
+  | "behavior"
+  | "ritual"
+  | "tool"
+  | "signal"
+  | "role"
+  | "failure";
+
+export type OfficeItemStatus = "backlog" | "planned" | "in-progress" | "done";
+
+export interface OfficeItem {
+  id: string; // e.g., P001, H010
+  title: string;
+  category: OfficeCategory;
+  type: "physical" | "behavior" | "ritual" | "tool" | "signal" | "role" | "failure";
+  company?: string; // optional company tag (XForce, GramGod, etc.)
+  priority?: number; // 1 (highest) ... 5 (lowest)
+  status?: OfficeItemStatus;
+}

@@ -12,6 +12,7 @@ const links = [
   { href: "/cockpit/library", label: "Library" },
   { href: "/cockpit/publisher", label: "Publisher" },
   { href: "/cockpit/rules", label: "Rules" },
+  { href: "/cockpit/office", label: "Office" },
   { href: "/cockpit/analytics", label: "Analytics" },
   { href: "/cockpit/logs", label: "Logs" },
   { href: "/cockpit/settings", label: "Settings" },
@@ -23,8 +24,8 @@ export function CockpitNav() {
   return (
     <aside className="hidden lg:block w-60 shrink-0 bg-[#0c0c0f]/80 backdrop-blur border-r border-white/5 text-sm">
       <div className="px-4 pt-5 pb-4">
-        <div className="text-xs uppercase tracking-[0.4em] text-pink-400 font-bold mb-3">PPP TV</div>
-        <div className="text-lg font-black text-white">Cockpit</div>
+        <div className="text-xs uppercase tracking-[0.4em] text-amber-300 font-bold mb-3">PROPOST</div>
+        <div className="text-lg font-black text-white">Command</div>
       </div>
       <nav className="flex flex-col gap-1 px-2 pb-4">
         {links.map((l) => {
