@@ -3,15 +3,16 @@
 // ============================================================
 
 import { withRetry } from './retry'
+import { cleanEnvValue } from '@/lib/env'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
 
 function token(): string {
-  return process.env.INSTAGRAM_ACCESS_TOKEN!
+  return cleanEnvValue(process.env.INSTAGRAM_ACCESS_TOKEN)
 }
 
 function accountId(): string {
-  return process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID!
+  return cleanEnvValue(process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID)
 }
 
 async function igFetch(path: string, options: RequestInit = {}): Promise<Response> {

@@ -3,12 +3,13 @@
 // ============================================================
 
 import { withRetry } from './retry'
+import { cleanEnvValue } from '@/lib/env'
 
 const BASE_URL = 'https://api.linkedin.com/v2'
 
 function authHeaders(): HeadersInit {
   return {
-    Authorization: `Bearer ${process.env.LINKEDIN_ACCESS_TOKEN}`,
+    Authorization: `Bearer ${cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)}`,
     'Content-Type': 'application/json',
     'X-Restli-Protocol-Version': '2.0.0',
   }
@@ -30,7 +31,7 @@ async function liFetch(path: string, options: RequestInit = {}): Promise<Respons
 
 export async function publishPost(content: string): Promise<{ postId: string }> {
   return withRetry(async () => {
-    const author = process.env.LINKEDIN_AUTHOR_URN
+    const author = cleanEnvValue(process.env.LINKEDIN_AUTHOR_URN)
     if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
     const body = {
       author,
@@ -63,7 +64,7 @@ export async function publishArticle(
   content: string
 ): Promise<{ articleId: string }> {
   return withRetry(async () => {
-    const author = process.env.LINKEDIN_AUTHOR_URN
+    const author = cleanEnvValue(process.env.LINKEDIN_AUTHOR_URN)
     if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
     const body = {
       author,

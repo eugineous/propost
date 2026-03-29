@@ -3,15 +3,16 @@
 // ============================================================
 
 import { withRetry } from './retry'
+import { cleanEnvValue } from '@/lib/env'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
 
 function token(): string {
-  return process.env.FACEBOOK_ACCESS_TOKEN!
+  return cleanEnvValue(process.env.FACEBOOK_ACCESS_TOKEN)
 }
 
 function pageId(): string {
-  return process.env.FACEBOOK_PAGE_ID!
+  return cleanEnvValue(process.env.FACEBOOK_PAGE_ID)
 }
 
 async function fbFetch(path: string, options: RequestInit = {}): Promise<Response> {
