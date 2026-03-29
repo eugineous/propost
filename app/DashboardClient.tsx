@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import OfficeCanvas from '@/components/OfficeCanvas'
 import ActivityFeed from '@/components/ActivityFeed'
 import MetricsPanel from '@/components/MetricsPanel'
@@ -18,6 +18,14 @@ const NAV_LINKS = [
 export default function DashboardClient() {
   const [agentStates] = useState<Record<string, CharacterState>>({})
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+  const [empireStatus, setEmpireStatus] = useState<'starting' | 'online'>('starting')
+
+  // Fire autonomous startup on mount
+  useEffect(() => {
+    fetch('/api/agents/startup', { method: 'POST' })
+      .then(() => setEmpireStatus('online'))
+      .catch(() => setEmpireStatus('online'))
+  }, [])
 
   const handleAgentClick = useCallback((agentName: string) => {
     setSelectedAgent(agentName)
@@ -50,8 +58,26 @@ export default function DashboardClient() {
             ))}
           </div>
         </div>
-        <div className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>
-          👑 EUGINE MICAH — FOUNDER
+        <div className="flex items-center gap-4">
+          <div
+            className="flex items-center gap-2 px-2 py-1 rounded"
+            style={{ background: empireStatus === 'online' ? 'rgba(34,197,94,0.1)' : 'rgba(251,191,36,0.1)', fontSize: 8, fontFamily: 'monospace' }}
+          >
+            <div
+              className="rounded-full"
+              style={{
+                width: 6, height: 6,
+                background: empireStatus === 'online' ? '#22C55E' : '#FBBF24',
+                boxShadow: empireStatus === 'online' ? '0 0 6px #22C55E' : '0 0 6px #FBBF24',
+              }}
+            />
+            <span style={{ color: empireStatus === 'online' ? '#22C55E' : '#FBBF24' }}>
+              {empireStatus === 'online' ? '31 AGENTS ACTIVE' : 'STARTING UP...'}
+            </span>
+          </div>
+          <div className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>
+            👑 EUGINE MICAH — FOUNDER
+          </div>
         </div>
       </nav>
 
@@ -74,18 +100,18 @@ export default function DashboardClient() {
         {/* Center — Canvas + Activity Feed */}
         <main className="flex flex-col overflow-hidden">
           <div
-            className="flex-shrink-0 p-3 border-b border-pp-border"
+            className="flex-shrink-0 p-2 border-b border-pp-border"
             style={{ background: '#0A0A14' }}
           >
             {selectedAgent && (
               <div
-                className="mb-2 px-2 py-1 rounded text-pp-gold pixel-text"
+                className="mb-2 px-2 py-1 rounded text-pp-gold pixel-text flex items-center justify-between"
                 style={{ fontSize: 8, background: '#1E1E3A' }}
               >
-                Selected: {selectedAgent}{' '}
+                <span>Agent: {selectedAgent}</span>
                 <button
                   onClick={() => setSelectedAgent(null)}
-                  className="text-pp-muted ml-2 hover:text-pp-text"
+                  className="text-pp-muted hover:text-pp-text ml-4"
                 >
                   ✕
                 </button>
