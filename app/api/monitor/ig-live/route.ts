@@ -15,7 +15,10 @@ function accountId() {
 async function igGet(path: string) {
   const sep = path.includes('?') ? '&' : '?'
   const res = await fetch(`${BASE_URL}${path}${sep}access_token=${token()}`)
-  if (!res.ok) throw new Error(`IG API ${res.status}: ${await res.text()}`)
+  if (!res.ok) {
+    const bodyText = await res.text()
+    throw new Error(`IG API ${res.status}: ${bodyText}`)
+  }
   return res.json()
 }
 
@@ -81,7 +84,27 @@ export async function GET() {
       fetchedAt: new Date().toISOString(),
     })
   } catch (err) {
+    const message = String(err)
+    const lower = message.toLowerCase()
+    // Common Meta failure modes we want to surface cleanly (no 500 spam)
+    if (lower.includes('application has been deleted') || lower.includes('error validating application') || lower.includes('invalid platform app')) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Instagram connection is invalid (Meta app/token issue). Reconnect Instagram/Facebook in Vercel env vars with a valid long-lived token.',
+          raw: message.slice(0, 400),
+        },
+        { status: 503 }
+      )
+    }
+    if (lower.includes('expired') || lower.includes('oauth') || lower.includes('access token')) {
+      return NextResponse.json(
+        { ok: false, error: 'Instagram access token is expired/invalid. Refresh token in Vercel env vars.', raw: message.slice(0, 400) },
+        { status: 503 }
+      )
+    }
+
     console.error('[ig-live] error:', err)
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

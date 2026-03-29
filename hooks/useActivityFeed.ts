@@ -6,57 +6,71 @@ import type { ActivityEvent } from '@/lib/types'
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
 const MAX_EVENTS = 100
-const RECONNECT_DELAY_MS = 5000
+const POLL_INTERVAL_MS = 5000
 
 export function useActivityFeed() {
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting')
-  const esRef = useRef<EventSource | null>(null)
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
+  const seenRef = useRef<Set<string>>(new Set())
 
-  const connect = () => {
+  const poll = async () => {
     if (!mountedRef.current) return
-
-    setConnectionStatus('connecting')
-
-    const es = new EventSource('/api/feed')
-    esRef.current = es
-
-    es.onopen = () => {
-      if (mountedRef.current) setConnectionStatus('connected')
-    }
-
-    es.onmessage = (e) => {
-      if (!mountedRef.current) return
-      try {
-        const event: ActivityEvent = JSON.parse(e.data)
-        setEvents((prev) => {
-          const next = [...prev, event]
-          return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next
-        })
-      } catch {
-        // ignore malformed events
+    try {
+      const res = await fetch('/api/monitor/live', { cache: 'no-store' })
+      const json = await res.json() as {
+        ok: boolean
+        recentActions?: Array<{
+          id: string
+          agentName: string
+          company: string
+          actionType: string
+          outcome: string | null
+          createdAt: string
+          outputPreview: string
+        }>
       }
-    }
 
-    es.onerror = () => {
+      if (!json.ok || !json.recentActions) throw new Error('monitor not ok')
+
+      setConnectionStatus('connected')
+
+      const nextEvents: ActivityEvent[] = []
+      for (const a of json.recentActions) {
+        if (seenRef.current.has(a.id)) continue
+        seenRef.current.add(a.id)
+        nextEvents.push({
+          type: 'agent_action',
+          agentName: a.agentName,
+          company: a.company as any,
+          summary: `${a.actionType}: ${a.outputPreview}`,
+          data: { outcome: a.outcome },
+          timestamp: a.createdAt,
+        })
+      }
+
+      if (nextEvents.length > 0) {
+        setEvents((prev) => {
+          const merged = [...prev, ...nextEvents]
+          return merged.length > MAX_EVENTS ? merged.slice(merged.length - MAX_EVENTS) : merged
+        })
+      }
+    } catch {
       if (!mountedRef.current) return
       setConnectionStatus('disconnected')
-      es.close()
-      esRef.current = null
-      reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY_MS)
     }
   }
 
   useEffect(() => {
     mountedRef.current = true
-    connect()
+    setConnectionStatus('connecting')
+    poll()
+    timerRef.current = setInterval(poll, POLL_INTERVAL_MS)
 
     return () => {
       mountedRef.current = false
-      esRef.current?.close()
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      if (timerRef.current) clearInterval(timerRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
