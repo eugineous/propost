@@ -3,9 +3,6 @@ import GoogleProvider from 'next-auth/providers/google'
 
 const ALLOWED_EMAIL = process.env.EUGINE_EMAIL ?? 'euginemicah@gmail.com'
 
-// Explicit callback URL — must match what's in Google Cloud Console
-const NEXTAUTH_URL = process.env.NEXTAUTH_URL ?? 'https://propost.vercel.app'
-
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -13,7 +10,6 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          // Force account selection so the user can pick the right account
           prompt: 'select_account',
           access_type: 'offline',
           response_type: 'code',
@@ -23,7 +19,6 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      // Single-user system — only Eugine can sign in
       if (user.email !== ALLOWED_EMAIL) {
         return false
       }
@@ -42,7 +37,6 @@ export const authOptions: NextAuthOptions = {
       return session
     },
     async redirect({ url, baseUrl }) {
-      // Always redirect to the dashboard after sign in
       if (url.startsWith('/')) return `${baseUrl}${url}`
       if (url.startsWith(baseUrl)) return url
       return baseUrl
@@ -54,9 +48,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
   secret: process.env.NEXTAUTH_SECRET,
-  // Explicitly set the URL so NextAuth doesn't guess wrong
-  ...(NEXTAUTH_URL && { url: NEXTAUTH_URL }),
 }
