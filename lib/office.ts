@@ -47,13 +47,14 @@ export function loadOfficeItems(): OfficeItem[] {
   const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
   const items: OfficeItem[] = [];
 
-  const lineRegex = /^-\s+\[(?<id>[A-Z]+[0-9]+)\]\s+(?<title>.+)$/;
+  // Avoid named capture groups to stay compatible with older TS targets
+  const lineRegex = /^-\s+\[([A-Z]+[0-9]+)\]\s+(.+)$/;
 
   for (const raw of lines) {
     const match = raw.match(lineRegex);
-    if (!match || !match.groups) continue;
-    const id = match.groups.id;
-    const title = match.groups.title.trim();
+    if (!match) continue;
+    const id = match[1];
+    const title = match[2].trim();
 
     const prefix = (id.startsWith("RO") ? "RO" : id[0]) as Prefix;
     const category = CATEGORY_BY_PREFIX[prefix];
