@@ -38,3 +38,4 @@ export function FeedTable({ items }: { items: FeedItem[] }) {
     </div>
   );
 }
+

@@ -15,3 +15,4 @@ export default function CockpitLayout({ children }: { children: ReactNode }) {
     <div className={`${bebas.variable} ${inter.variable} font-sans`}>{children}</div>
   );
 }
+

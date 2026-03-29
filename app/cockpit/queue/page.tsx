@@ -1,4 +1,6 @@
-﻿import { CockpitNav } from "@/components/cockpit/CockpitNav";
+﻿'use client';
+
+import { CockpitNav } from "@/components/cockpit/CockpitNav";
 import { CockpitTopBar } from "@/components/cockpit/CockpitTopBar";
 import { QueueList } from "@/components/cockpit/QueueList";
 import { mockPosts } from "@/lib/cockpit/data";
@@ -23,3 +25,4 @@ export default function QueuePage() {
     </div>
   );
 }
+

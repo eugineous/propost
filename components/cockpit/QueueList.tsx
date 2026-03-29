@@ -35,3 +35,4 @@ export function QueueList({ items }: { items: CockpitPost[] }) {
     </div>
   );
 }
+

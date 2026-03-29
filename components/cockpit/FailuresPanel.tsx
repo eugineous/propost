@@ -25,3 +25,4 @@ export function FailuresPanel({ items }: { items: CockpitPost[] }) {
     </div>
   );
 }
+

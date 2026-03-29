@@ -1,4 +1,6 @@
-﻿import { CockpitNav } from "@/components/cockpit/CockpitNav";
+﻿'use client';
+
+import { CockpitNav } from "@/components/cockpit/CockpitNav";
 import { CockpitTopBar } from "@/components/cockpit/CockpitTopBar";
 
 export default function DeployPage() {
@@ -26,3 +28,4 @@ export default function DeployPage() {
     </div>
   );
 }
+

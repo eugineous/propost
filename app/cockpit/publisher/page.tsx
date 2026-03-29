@@ -1,4 +1,6 @@
-﻿import { CockpitNav } from "@/components/cockpit/CockpitNav";
+﻿'use client';
+
+import { CockpitNav } from "@/components/cockpit/CockpitNav";
 import { CockpitTopBar } from "@/components/cockpit/CockpitTopBar";
 import { mockPosts } from "@/lib/cockpit/data";
 
@@ -29,3 +31,4 @@ export default function PublisherPage() {
     </div>
   );
 }
+

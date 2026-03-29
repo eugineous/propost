@@ -1,4 +1,6 @@
-﻿import { CockpitNav } from "@/components/cockpit/CockpitNav";
+﻿'use client';
+
+import { CockpitNav } from "@/components/cockpit/CockpitNav";
 import { CockpitTopBar } from "@/components/cockpit/CockpitTopBar";
 import { FeedTable } from "@/components/cockpit/FeedTable";
 import { mockFeed } from "@/lib/cockpit/data";
@@ -18,3 +20,4 @@ export default function FeedsPage() {
     </div>
   );
 }
+
