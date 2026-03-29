@@ -34,13 +34,31 @@ function keywordRoute(text: string): { targetCorp: Corp; targetAgent: string; in
   if (t.includes('trend') || t.includes('scout')) {
     return { targetCorp: 'xforce', targetAgent: 'scout', intent: 'fetch_trends' }
   }
+  if (t.includes('learn pattern') || t.includes('learn') || t.includes('memory')) {
+    return { targetCorp: 'intelcore', targetAgent: 'memory', intent: 'learn_patterns' }
+  }
   if (t.includes('brief') || t.includes('report') || t.includes('summary')) {
     return { targetCorp: 'intelcore', targetAgent: 'scribe', intent: 'generate_briefing' }
+  }
+  if (t.includes('crisis') || t.includes('risk check') || t.includes('safety check')) {
+    return { targetCorp: 'intelcore', targetAgent: 'sentry', intent: 'crisis_check' }
   }
   if (t.includes('website') || t.includes('seo') || t.includes('web')) {
     return { targetCorp: 'webboss', targetAgent: 'root', intent: 'web_task' }
   }
   return { targetCorp: 'intelcore', targetAgent: 'sovereign', intent: 'general_command' }
+}
+
+async function invokeWork(req: NextRequest, agents: string[]) {
+  const origin = new URL(req.url).origin
+  const res = await fetch(`${origin}/api/agents/work`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agents }),
+    cache: 'no-store',
+  })
+  const json = await res.json() as { ok?: boolean; results?: Record<string, unknown>; errors?: Record<string, string> }
+  return { ok: res.ok && Boolean(json.ok), json }
 }
 
 export async function POST(req: NextRequest) {
@@ -97,9 +115,56 @@ export async function POST(req: NextRequest) {
       if (intent === 'reply_dms') {
         const result = await processInstagramBacklog({ runBy: 'command', maxReplies: 15, maxConversations: 50 })
         preview = `CHAT: replied ${result.replied}/${result.processed} (scanned ${result.scanned})`
+      } else if (intent === 'fetch_trends') {
+        const run = await invokeWork(req, ['SCOUT'])
+        if (run.ok) {
+          const scout = run.json.results?.SCOUT as { trendsFound?: number } | undefined
+          preview = `SCOUT: fetched ${scout?.trendsFound ?? 0} trends`
+        } else {
+          status = 'queued'
+          preview = `SCOUT run failed: ${JSON.stringify(run.json.errors ?? {}).slice(0, 120)}`
+        }
+      } else if (intent === 'post_to_x') {
+        const run = await invokeWork(req, ['BLAZE'])
+        if (run.ok) {
+          const blaze = run.json.results?.BLAZE as { type?: string } | undefined
+          preview = `BLAZE: generated ${blaze?.type ?? 'tweet'} draft`
+        } else {
+          status = 'queued'
+          preview = `BLAZE run failed: ${JSON.stringify(run.json.errors ?? {}).slice(0, 120)}`
+        }
+      } else if (intent === 'generate_briefing') {
+        const run = await invokeWork(req, ['SCRIBE'])
+        if (run.ok) {
+          preview = 'SCRIBE: generated latest briefing'
+        } else {
+          status = 'queued'
+          preview = `SCRIBE run failed: ${JSON.stringify(run.json.errors ?? {}).slice(0, 120)}`
+        }
+      } else if (intent === 'learn_patterns') {
+        const run = await invokeWork(req, ['MEMORY'])
+        if (run.ok) {
+          preview = 'MEMORY: analyzed recent post patterns'
+        } else {
+          status = 'queued'
+          preview = `MEMORY run failed: ${JSON.stringify(run.json.errors ?? {}).slice(0, 120)}`
+        }
+      } else if (intent === 'crisis_check') {
+        const run = await invokeWork(req, ['SENTRY'])
+        if (run.ok) {
+          preview = 'SENTRY: crisis scan completed'
+        } else {
+          status = 'queued'
+          preview = `SENTRY run failed: ${JSON.stringify(run.json.errors ?? {}).slice(0, 120)}`
+        }
       } else {
         const dispatch = await dispatchToAgent(targetCorp, targetAgent, { text: body.text })
-        preview = dispatch.preview
+        if (dispatch.preview) {
+          preview = dispatch.preview
+        } else {
+          status = 'queued'
+          preview = `No immediate output from ${targetCorp}/${targetAgent}; task queued.`
+        }
       }
     } catch (err) {
       console.error('[command] dispatch error:', err)
