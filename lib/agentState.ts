@@ -104,28 +104,38 @@ export async function pauseCorpAgents(corp: Corp, reason: string): Promise<void>
 // ── Agent Name Registry ───────────────────────────────────────
 
 export const ALL_AGENT_NAMES: string[] = [
-  // IntelCore
+  // IntelCore (5)
   'sovereign', 'oracle', 'memory', 'sentry', 'scribe',
-  // XForce
+  // XForce (13)
   'zara', 'blaze', 'scout', 'echo', 'hawk', 'lumen', 'pixel_x',
-  // LinkedElite
+  'thunder', 'surge', 'flint', 'nova_x', 'forge', 'trace',
+  // LinkedElite (10)
   'nova', 'orator', 'bridge', 'atlas', 'deal_li', 'graph',
-  // GramGod
+  'voice', 'prism', 'mentor', 'amplify',
+  // GramGod (12)
   'aurora', 'vibe', 'chat', 'deal_ig', 'lens',
-  // PagePower
+  'reel', 'story', 'caption', 'hashtag', 'tribe', 'fanbase', 'rescue',
+  // PagePower (4)
   'chief', 'pulse', 'community', 'reach',
-  // WebBoss
+  // WebBoss (5)
   'root', 'crawl', 'build', 'shield', 'speed',
+  // HRForce (12)
+  'people', 'welfare', 'rotate', 'discipline', 'reward', 'brief',
+  'onboard', 'culture', 'train', 'eval', 'social', 'advocate',
+  // LegalShield (9)
+  'judge', 'policy', 'risk', 'copyright', 'gdpr', 'defame', 'shadow', 'appeal', 'counsel',
+  // FinanceDesk (10)
+  'banker', 'deal', 'rate', 'invoice', 'sponsor', 'revenue', 'pitch', 'collab', 'grants', 'forecast',
 ]
 
 const CORP_AGENT_MAP: Record<Corp, string[]> = {
   intelcore: ['sovereign', 'oracle', 'memory', 'sentry', 'scribe'],
-  xforce: ['zara', 'blaze', 'scout', 'echo', 'hawk', 'lumen', 'pixel_x'],
-  linkedelite: ['nova', 'orator', 'bridge', 'atlas', 'deal_li', 'graph'],
-  gramgod: ['aurora', 'vibe', 'chat', 'deal_ig', 'lens'],
+  xforce: ['zara', 'blaze', 'scout', 'echo', 'hawk', 'lumen', 'pixel_x', 'thunder', 'surge', 'flint', 'nova_x', 'forge', 'trace'],
+  linkedelite: ['nova', 'orator', 'bridge', 'atlas', 'deal_li', 'graph', 'voice', 'prism', 'mentor', 'amplify'],
+  gramgod: ['aurora', 'vibe', 'chat', 'deal_ig', 'lens', 'reel', 'story', 'caption', 'hashtag', 'tribe', 'fanbase', 'rescue'],
   pagepower: ['chief', 'pulse', 'community', 'reach'],
   webboss: ['root', 'crawl', 'build', 'shield', 'speed'],
   hrforce: ['people', 'welfare', 'rotate', 'discipline', 'reward', 'brief', 'onboard', 'culture', 'train', 'eval', 'social', 'advocate'],
   legalshield: ['judge', 'policy', 'risk', 'copyright', 'gdpr', 'defame', 'shadow', 'appeal', 'counsel'],
-  financedesk: ['banker', 'deal_fd', 'rate', 'invoice', 'sponsor', 'revenue', 'pitch', 'collab_fd', 'grants', 'forecast_fd'],
+  financedesk: ['banker', 'deal', 'rate', 'invoice', 'sponsor', 'revenue', 'pitch', 'collab', 'grants', 'forecast'],
 }

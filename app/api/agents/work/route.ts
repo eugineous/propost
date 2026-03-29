@@ -6,6 +6,7 @@ import { agentActions, posts, trends } from '@/lib/schema'
 import { desc, gte } from 'drizzle-orm'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getDMs, replyToDM } from '@/lib/platforms/instagram'
+import { dispatchToAgent, AGENT_CORP_LOOKUP } from '@/lib/agentDispatch'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
@@ -247,8 +248,23 @@ export async function POST(req: NextRequest) {
           case 'MEMORY':
             results.MEMORY = await runMemory()
             break
-          default:
-            errors[agent] = 'Unknown agent'
+          default: {
+            // Generic dispatch — works for all 80 agents via agentDispatch
+            const agentLower = agent.toLowerCase()
+            const corp = AGENT_CORP_LOOKUP[agentLower]
+            if (corp) {
+              const t = Date.now()
+              const res = await dispatchToAgent(corp, agentLower, { task: 'Run your primary duty for ProPost Empire' })
+              await logAction(agentLower, corp, 'agent_work', {
+                summary: res.preview ?? 'Task executed',
+                task: 'primary_duty',
+              }, 'success', 0, Date.now() - t)
+              results[agent.toUpperCase()] = { agent: agent.toUpperCase(), preview: res.preview }
+            } else {
+              errors[agent] = 'Unknown agent'
+            }
+            break
+          }
         }
       } catch (err) {
         errors[agent] = String(err)
@@ -270,6 +286,6 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     message: 'POST to this endpoint with {"agents":["CHAT","BLAZE","SCOUT","SCRIBE","MEMORY"]} to trigger agent work',
-    availableAgents: ['CHAT', 'BLAZE', 'SCOUT', 'SCRIBE', 'MEMORY'],
+    availableAgents: Object.keys(AGENT_CORP_LOOKUP).map(a => a.toUpperCase()),
   })
 }

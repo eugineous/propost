@@ -19,6 +19,8 @@ export async function POST() {
     { path: '/api/cron/scout', name: 'SCOUT: Trend monitoring' },
     { path: '/api/cron/sentry', name: 'SENTRY: Crisis check' },
     { path: '/api/cron/metrics-sync', name: 'PIXEL: Metrics sync' },
+    { path: '/api/cron/briefing', name: 'SCRIBE: Daily briefing' },
+    { path: '/api/cron/memory', name: 'MEMORY: Pattern analysis' },
   ]
 
   // Log startup to activity feed
@@ -27,8 +29,9 @@ export async function POST() {
     company: 'intelcore',
     actionType: 'empire_startup',
     details: {
-      message: '👑 ProPost Empire is ONLINE. All 31 agents activated. Starting autonomous operations.',
+      message: '👑 ProPost Empire is ONLINE. All 80 agents activated across 9 corps. Starting autonomous operations.',
       tasks: tasks.map(t => t.name),
+      corps: ['IntelCore', 'XForce', 'LinkedElite', 'GramGod', 'PagePower', 'WebBoss', 'HRForce', 'LegalShield', 'FinanceDesk'],
     },
     outcome: 'success',
   })
@@ -42,8 +45,8 @@ export async function POST() {
 
   return NextResponse.json({
     ok: true,
-    message: 'Empire activated. All agents are now working autonomously.',
-    agents: 31,
+    message: 'Empire activated. All 80 agents are now working autonomously across 9 corps.',
+    agents: 80,
     tasks: tasks.map(t => t.name),
   })
 }
