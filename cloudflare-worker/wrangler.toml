@@ -1,0 +1,10 @@
+name = "propost-webhook-receiver"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "WEBHOOK_KV"
+id = "placeholder-replace-with-real-id"
+
+[vars]
+VERCEL_URL = "https://your-propost.vercel.app"

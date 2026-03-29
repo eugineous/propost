@@ -1,0 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pp-bg: #0A0A14;
+  --pp-surface: #12121F;
+  --pp-border: #1E1E3A;
+  --pp-gold: #FFD700;
+  --pp-accent: #00F0FF;
+  --pp-text: #E2E8F0;
+  --pp-muted: #64748B;
+  --pp-danger: #EF4444;
+  --pp-warning: #F59E0B;
+  --pixel-shadow: 2px 2px 0px #0a0a14;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--pp-bg);
+  color: var(--pp-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Pixel art utilities */
+.pixel-text {
+  font-family: 'Press Start 2P', monospace;
+  text-shadow: var(--pixel-shadow);
+}
+
+.pixel-border {
+  border: 2px solid var(--pp-border);
+  image-rendering: pixelated;
+}
+
+.pixel-card {
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-border);
+  border-radius: 4px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--pp-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pp-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pp-muted);
+}
+
+/* Crisis alert pulse animation */
+@keyframes crisis-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.crisis-pulse {
+  animation: crisis-pulse 1s ease-in-out infinite;
+}
+
+/* Agent idle breathing animation */
+@keyframes breathe {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-2px); }
+}
+.agent-breathe {
+  animation: breathe 2s ease-in-out infinite;
+}

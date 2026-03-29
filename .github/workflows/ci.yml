@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Type Check, Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npx vitest --run
+        env:
+          DATABASE_URL: postgresql://test:test@localhost/test
+          NEXTAUTH_SECRET: test-secret
+          GEMINI_API_KEY: test-key
+          NVIDIA_API_KEY: test-key
+          CRON_SECRET: test-cron-secret
+          INTERNAL_SECRET: test-internal-secret
+          CF_ACCOUNT_ID: test
+          CF_KV_AGENT_STATE_ID: test
+          CF_API_TOKEN: test
