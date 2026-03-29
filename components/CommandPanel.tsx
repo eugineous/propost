@@ -1,70 +1,40 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import type { CommandResponse, OverrideResponse, CharacterState } from '@/lib/types'
-
-interface AgentStatusItem {
-  name: string
-  corp: string
-  state: CharacterState
-}
-
-const ALL_AGENTS: AgentStatusItem[] = [
-  // IntelCore
-  { name: 'SOVEREIGN', corp: 'intelcore', state: 'idle' },
-  { name: 'ORACLE', corp: 'intelcore', state: 'idle' },
-  { name: 'MEMORY', corp: 'intelcore', state: 'idle' },
-  { name: 'SENTRY', corp: 'intelcore', state: 'idle' },
-  { name: 'SCRIBE', corp: 'intelcore', state: 'idle' },
-  // XForce
-  { name: 'ZARA', corp: 'xforce', state: 'idle' },
-  { name: 'BLAZE', corp: 'xforce', state: 'idle' },
-  { name: 'SCOUT', corp: 'xforce', state: 'idle' },
-  { name: 'ECHO', corp: 'xforce', state: 'idle' },
-  { name: 'HAWK', corp: 'xforce', state: 'idle' },
-  { name: 'LUMEN', corp: 'xforce', state: 'idle' },
-  { name: 'PIXEL', corp: 'xforce', state: 'idle' },
-  // LinkedElite
-  { name: 'NOVA', corp: 'linkedelite', state: 'idle' },
-  { name: 'ORATOR', corp: 'linkedelite', state: 'idle' },
-  { name: 'BRIDGE', corp: 'linkedelite', state: 'idle' },
-  { name: 'ATLAS', corp: 'linkedelite', state: 'idle' },
-  { name: 'DEAL_LI', corp: 'linkedelite', state: 'idle' },
-  { name: 'GRAPH', corp: 'linkedelite', state: 'idle' },
-  // GramGod
-  { name: 'AURORA', corp: 'gramgod', state: 'idle' },
-  { name: 'VIBE', corp: 'gramgod', state: 'idle' },
-  { name: 'CHAT', corp: 'gramgod', state: 'idle' },
-  { name: 'DEAL_IG', corp: 'gramgod', state: 'idle' },
-  { name: 'LENS', corp: 'gramgod', state: 'idle' },
-  // PagePower
-  { name: 'CHIEF', corp: 'pagepower', state: 'idle' },
-  { name: 'PULSE', corp: 'pagepower', state: 'idle' },
-  { name: 'COMMUNITY', corp: 'pagepower', state: 'idle' },
-  { name: 'REACH', corp: 'pagepower', state: 'idle' },
-  // WebBoss
-  { name: 'ROOT', corp: 'webboss', state: 'idle' },
-  { name: 'CRAWL', corp: 'webboss', state: 'idle' },
-  { name: 'BUILD', corp: 'webboss', state: 'idle' },
-  { name: 'SHIELD', corp: 'webboss', state: 'idle' },
-  { name: 'SPEED', corp: 'webboss', state: 'idle' },
-]
+import type { CharacterState } from '@/lib/types'
 
 const CORP_COLORS: Record<string, string> = {
-  intelcore: '#FFD700',
-  xforce: '#1DA1F2',
-  linkedelite: '#0077B5',
-  gramgod: '#E1306C',
-  pagepower: '#1877F2',
-  webboss: '#22C55E',
+  intelcore: '#FFD700', xforce: '#1DA1F2', linkedelite: '#0077B5',
+  gramgod: '#E1306C', pagepower: '#1877F2', webboss: '#22C55E',
 }
 
-const STATE_DOT_COLORS: Record<CharacterState, string> = {
-  idle: '#00F0FF',
-  active: '#FFD700',
-  blocked: '#EF4444',
-  paused: '#64748B',
-}
+const ALL_AGENTS = [
+  { name: 'SOVEREIGN', corp: 'intelcore' }, { name: 'ORACLE', corp: 'intelcore' },
+  { name: 'MEMORY', corp: 'intelcore' }, { name: 'SENTRY', corp: 'intelcore' },
+  { name: 'SCRIBE', corp: 'intelcore' }, { name: 'ZARA', corp: 'xforce' },
+  { name: 'BLAZE', corp: 'xforce' }, { name: 'SCOUT', corp: 'xforce' },
+  { name: 'ECHO', corp: 'xforce' }, { name: 'HAWK', corp: 'xforce' },
+  { name: 'LUMEN', corp: 'xforce' }, { name: 'PIXEL', corp: 'xforce' },
+  { name: 'NOVA', corp: 'linkedelite' }, { name: 'ORATOR', corp: 'linkedelite' },
+  { name: 'BRIDGE', corp: 'linkedelite' }, { name: 'ATLAS', corp: 'linkedelite' },
+  { name: 'DEAL_LI', corp: 'linkedelite' }, { name: 'GRAPH', corp: 'linkedelite' },
+  { name: 'AURORA', corp: 'gramgod' }, { name: 'VIBE', corp: 'gramgod' },
+  { name: 'CHAT', corp: 'gramgod' }, { name: 'DEAL_IG', corp: 'gramgod' },
+  { name: 'LENS', corp: 'gramgod' }, { name: 'CHIEF', corp: 'pagepower' },
+  { name: 'PULSE', corp: 'pagepower' }, { name: 'COMMUNITY', corp: 'pagepower' },
+  { name: 'REACH', corp: 'pagepower' }, { name: 'ROOT', corp: 'webboss' },
+  { name: 'CRAWL', corp: 'webboss' }, { name: 'BUILD', corp: 'webboss' },
+  { name: 'SHIELD', corp: 'webboss' }, { name: 'SPEED', corp: 'webboss' },
+]
+
+const QUICK_COMMANDS = [
+  { label: '📸 Clear IG DMs', cmd: 'Reply to all unreplied Instagram DMs' },
+  { label: '📈 Find trends', cmd: 'Scout trending topics in Kenya right now' },
+  { label: '✍️ Write tweet', cmd: 'Write a viral tweet about Kenyan media' },
+  { label: '📊 Daily briefing', cmd: 'Generate today\'s situation report' },
+  { label: '🧠 Learn patterns', cmd: 'Analyze post performance and extract learnings' },
+  { label: '🛡️ Crisis check', cmd: 'Check all platforms for crisis signals' },
+]
 
 interface CommandPanelProps {
   agentStates?: Record<string, CharacterState>
@@ -73,180 +43,128 @@ interface CommandPanelProps {
 export default function CommandPanel({ agentStates = {} }: CommandPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [lastResponse, setLastResponse] = useState<CommandResponse | null>(null)
-  const [overrideMsg, setOverrideMsg] = useState<string | null>(null)
+  const [result, setResult] = useState<{ type: 'success' | 'error'; message: string; detail?: string } | null>(null)
 
-  const submitCommand = useCallback(async () => {
-    if (!input.trim() || loading) return
+  const execute = useCallback(async (text: string) => {
+    if (!text.trim() || loading) return
     setLoading(true)
-    setOverrideMsg(null)
+    setResult(null)
     try {
       const res = await fetch('/api/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: input.trim() }),
+        body: JSON.stringify({ text: text.trim() }),
       })
-      if (res.ok) {
-        const data: CommandResponse = await res.json()
-        setLastResponse(data)
+      const data = await res.json() as { error?: string; intent?: string; routedTo?: { corp: string; agent: string }; status?: string; preview?: string }
+      if (!res.ok) {
+        setResult({ type: 'error', message: data.error ?? 'Command failed' })
+      } else {
+        const corp = data.routedTo?.corp ?? ''
+        const agent = data.routedTo?.agent ?? ''
+        setResult({
+          type: 'success',
+          message: `✅ Routed to ${corp.toUpperCase()} / ${agent} — ${data.status}`,
+          detail: data.preview,
+        })
       }
     } catch {
-      // ignore
+      setResult({ type: 'error', message: 'Network error — check connection' })
     } finally {
       setLoading(false)
       setInput('')
     }
-  }, [input, loading])
+  }, [loading])
 
-  const sendOverride = useCallback(async (command: 'PAUSE' | 'RESUME' | 'STATUS') => {
-    setOverrideMsg(null)
+  const sendOverride = useCallback(async (command: string) => {
     try {
       const res = await fetch('/api/override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command, scope: 'all' }),
       })
-      if (res.ok) {
-        const data: OverrideResponse = await res.json()
-        setOverrideMsg(data.message)
-      }
+      const data = await res.json() as { message?: string }
+      setResult({ type: 'success', message: data.message ?? `${command} sent` })
     } catch {
-      // ignore
+      setResult({ type: 'error', message: 'Override failed' })
     }
   }, [])
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      submitCommand()
-    }
-  }
-
   return (
     <div className="h-full flex flex-col gap-3 overflow-y-auto p-3">
-      <h2 className="pixel-text text-pp-gold text-xs">COMMAND CENTER</h2>
+      <h2 className="pixel-text text-pp-gold" style={{ fontSize: 8 }}>COMMAND CENTER</h2>
 
-      {/* Natural language input */}
-      <div className="pixel-card p-2 flex flex-col gap-2">
+      {/* Command input */}
+      <div className="rounded p-2 flex flex-col gap-2" style={{ background: '#12121F', border: '1px solid #1E1E3A' }}>
         <textarea
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Issue a command to your empire..."
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); execute(input) } }}
+          placeholder="Tell your empire what to do..."
           rows={3}
           className="w-full bg-transparent text-pp-text resize-none outline-none placeholder-pp-muted"
           style={{ fontSize: 10, fontFamily: 'monospace' }}
         />
         <button
-          onClick={submitCommand}
+          onClick={() => execute(input)}
           disabled={loading || !input.trim()}
-          className="pixel-text text-pp-bg px-3 py-1 rounded disabled:opacity-50 transition-opacity"
-          style={{ fontSize: 8, background: '#FFD700' }}
+          className="pixel-text px-3 py-1 rounded disabled:opacity-40"
+          style={{ fontSize: 8, background: '#FFD700', color: '#0A0A14' }}
         >
-          {loading ? 'ROUTING...' : '▶ EXECUTE'}
+          {loading ? '⚙️ ROUTING...' : '▶ EXECUTE'}
         </button>
       </div>
 
-      {/* Last command response */}
-      {lastResponse && (
-        <div className="pixel-card p-2 space-y-1">
-          <div className="pixel-text text-pp-accent" style={{ fontSize: 7 }}>LAST COMMAND</div>
-          <div style={{ fontSize: 9 }}>
-            <span className="text-pp-muted">Intent: </span>
-            <span className="text-pp-text">{lastResponse.intent}</span>
-          </div>
-          <div style={{ fontSize: 9 }}>
-            <span className="text-pp-muted">Routed to: </span>
-            <span style={{ color: CORP_COLORS[lastResponse.routedTo.corp] ?? '#E2E8F0' }}>
-              {lastResponse.routedTo.corp.toUpperCase()} / {lastResponse.routedTo.agent}
-            </span>
-          </div>
-          <div style={{ fontSize: 9 }}>
-            <span className="text-pp-muted">Status: </span>
-            <span
-              className={
-                lastResponse.status === 'executing'
-                  ? 'text-pp-gold'
-                  : lastResponse.status === 'blocked_by_hawk'
-                  ? 'text-pp-danger'
-                  : 'text-pp-accent'
-              }
-            >
-              {lastResponse.status.toUpperCase()}
-            </span>
-          </div>
-          {lastResponse.preview && (
-            <div className="text-pp-muted border-t border-pp-border pt-1 mt-1" style={{ fontSize: 8 }}>
-              {lastResponse.preview}
-            </div>
-          )}
+      {/* Result */}
+      {result && (
+        <div className="rounded p-2" style={{
+          background: result.type === 'success' ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)',
+          border: `1px solid ${result.type === 'success' ? '#22C55E44' : '#EF444444'}`,
+        }}>
+          <div style={{ fontSize: 9, color: result.type === 'success' ? '#22C55E' : '#EF4444' }}>{result.message}</div>
+          {result.detail && <div style={{ fontSize: 8, color: '#94A3B8', marginTop: 4 }}>{result.detail}</div>}
         </div>
       )}
 
-      {/* Override buttons */}
-      <div className="pixel-card p-2">
-        <div className="pixel-text text-pp-muted mb-2" style={{ fontSize: 7 }}>QUICK OVERRIDES</div>
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={() => sendOverride('PAUSE')}
-            className="pixel-text px-2 py-1 rounded text-white"
-            style={{ fontSize: 7, background: '#EF4444' }}
-          >
-            ⏸ PAUSE ALL
-          </button>
-          <button
-            onClick={() => sendOverride('RESUME')}
-            className="pixel-text px-2 py-1 rounded text-white"
-            style={{ fontSize: 7, background: '#22C55E' }}
-          >
-            ▶ RESUME ALL
-          </button>
-          <button
-            onClick={() => sendOverride('STATUS')}
-            className="pixel-text px-2 py-1 rounded"
-            style={{ fontSize: 7, background: '#1E1E3A', color: '#00F0FF' }}
-          >
-            📊 STATUS
-          </button>
+      {/* Quick commands */}
+      <div className="rounded p-2" style={{ background: '#12121F', border: '1px solid #1E1E3A' }}>
+        <div className="pixel-text text-pp-muted mb-2" style={{ fontSize: 7 }}>QUICK COMMANDS</div>
+        <div className="grid grid-cols-2 gap-1">
+          {QUICK_COMMANDS.map(qc => (
+            <button
+              key={qc.cmd}
+              onClick={() => execute(qc.cmd)}
+              disabled={loading}
+              className="rounded px-1 py-1 text-left disabled:opacity-40"
+              style={{ background: '#0A0A14', border: '1px solid #1E1E3A', color: '#94A3B8', fontSize: 7, fontFamily: 'monospace', cursor: 'pointer' }}
+            >
+              {qc.label}
+            </button>
+          ))}
         </div>
-        {overrideMsg && (
-          <div className="text-pp-accent mt-2" style={{ fontSize: 9 }}>
-            {overrideMsg}
-          </div>
-        )}
       </div>
 
-      {/* Agent status grid */}
-      <div className="pixel-card p-2 flex-1">
-        <div className="pixel-text text-pp-muted mb-2" style={{ fontSize: 7 }}>
-          AGENT STATUS ({ALL_AGENTS.length})
+      {/* Overrides */}
+      <div className="rounded p-2" style={{ background: '#12121F', border: '1px solid #1E1E3A' }}>
+        <div className="pixel-text text-pp-muted mb-2" style={{ fontSize: 7 }}>QUICK OVERRIDES</div>
+        <div className="flex gap-1 flex-wrap">
+          <button onClick={() => sendOverride('PAUSE')} className="rounded px-2 py-1" style={{ background: '#EF444422', border: '1px solid #EF444444', color: '#EF4444', fontSize: 7, fontFamily: 'monospace', cursor: 'pointer' }}>⏸ PAUSE ALL</button>
+          <button onClick={() => sendOverride('RESUME')} className="rounded px-2 py-1" style={{ background: '#22C55E22', border: '1px solid #22C55E44', color: '#22C55E', fontSize: 7, fontFamily: 'monospace', cursor: 'pointer' }}>▶ RESUME ALL</button>
+          <button onClick={() => sendOverride('STATUS')} className="rounded px-2 py-1" style={{ background: '#00F0FF11', border: '1px solid #00F0FF33', color: '#00F0FF', fontSize: 7, fontFamily: 'monospace', cursor: 'pointer' }}>📊 STATUS</button>
         </div>
-        <div
-          className="grid gap-1"
-          style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
-        >
-          {ALL_AGENTS.map((agent) => {
-            const state: CharacterState = agentStates[agent.name] ?? 'idle'
+      </div>
+
+      {/* Agent grid */}
+      <div className="rounded p-2 flex-1" style={{ background: '#12121F', border: '1px solid #1E1E3A' }}>
+        <div className="pixel-text text-pp-muted mb-2" style={{ fontSize: 7 }}>AGENT STATUS ({ALL_AGENTS.length})</div>
+        <div className="grid gap-0.5" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          {ALL_AGENTS.map(a => {
+            const state: CharacterState = agentStates[a.name] ?? 'idle'
+            const dotColor = state === 'active' ? '#FFD700' : state === 'blocked' ? '#EF4444' : state === 'paused' ? '#64748B' : '#00F0FF'
             return (
-              <div
-                key={agent.name}
-                className="flex items-center gap-1 px-1 py-0.5 rounded"
-                style={{ background: '#0A0A14' }}
-                title={`${agent.name} — ${state}`}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ background: STATE_DOT_COLORS[state] }}
-                />
-                <span
-                  className="truncate"
-                  style={{
-                    fontSize: 7,
-                    color: CORP_COLORS[agent.corp] ?? '#E2E8F0',
-                    fontFamily: 'monospace',
-                  }}
-                >
-                  {agent.name.length > 7 ? agent.name.slice(0, 7) : agent.name}
+              <div key={a.name} className="flex items-center gap-1 px-1 py-0.5 rounded" style={{ background: '#0A0A14' }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: dotColor, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ fontSize: 7, color: CORP_COLORS[a.corp] ?? '#E2E8F0', fontFamily: 'monospace' }} className="truncate">
+                  {a.name.length > 7 ? a.name.slice(0, 7) : a.name}
                 </span>
               </div>
             )
