@@ -7,4 +7,9 @@ binding = "WEBHOOK_KV"
 id = "placeholder-replace-with-real-id"
 
 [vars]
-VERCEL_URL = "https://your-propost.vercel.app"
+VERCEL_URL = "https://propost.vercel.app"
+CRON_SECRET = "set-in-cloudflare-dashboard"
+INTERNAL_SECRET = "set-in-cloudflare-dashboard"
+
+[triggers]
+crons = ["*/5 * * * *"]

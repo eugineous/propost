@@ -155,9 +155,8 @@ const TASKS: Record<string, string[]> = {
   BANKER:['Revenue review','Deal pipeline','Finance report'],
 }
 
-// ── Layout: 3x3 grid ─────────────────────────────────────────
-const CW = 1200, CH = 600, COLS = 3, ROWS = 3
-const RW = CW / COLS, RH = CH / ROWS
+// ── Layout: single mega office ───────────────────────────────
+const CW = 1200, CH = 600
 const FPS = 30, FMS = 1000 / FPS
 
 interface Desk { x: number; y: number }
@@ -174,22 +173,39 @@ interface AgentAnim {
   status: 'working' | 'idle' | 'offline'
 }
 
-function getDesks(rx: number, ry: number, rw: number, rh: number, count: number): Desk[] {
-  const desks: Desk[] = []
-  const cols = Math.min(count, 4)
-  const rows = Math.ceil(count / cols)
-  const padX = 20, padY = 35
-  const spacingX = (rw - padX * 2) / Math.max(cols - 1, 1)
-  const spacingY = (rh - padY * 2) / Math.max(rows - 1, 1)
+function getRoundTableSeats(cx: number, cy: number, radius: number, count: number): Desk[] {
+  const seats: Desk[] = []
   for (let i = 0; i < count; i++) {
-    const c = i % cols, r = Math.floor(i / cols)
-    desks.push({
-      x: rx + padX + c * (cols > 1 ? spacingX : 0),
-      y: ry + padY + r * (rows > 1 ? spacingY : 0),
-    })
+    const a = (i / Math.max(1, count)) * Math.PI * 2
+    seats.push({ x: cx + Math.cos(a) * radius, y: cy + Math.sin(a) * radius })
   }
-  return desks
+  return seats
 }
+
+type Zone = {
+  id: string
+  label: string
+  color: string
+  center: { x: number; y: number }
+  tableRadius: number
+  agents: string[]
+}
+
+const ZONES: Zone[] = [
+  { id: 'command', label: '👑 COMMAND', color: '#FFD700', center: { x: 600, y: 140 }, tableRadius: 60, agents: ['EUGINE', 'SOVEREIGN', 'ORACLE', 'MEMORY', 'SENTRY', 'SCRIBE'] },
+  { id: 'xforce', label: '⚡ XFORCE', color: '#1DA1F2', center: { x: 250, y: 190 }, tableRadius: 55, agents: ['ZARA','BLAZE','SCOUT','ECHO','HAWK','LUMEN','PIXEL'] },
+  { id: 'gramgod', label: '📸 GRAMGOD', color: '#E1306C', center: { x: 950, y: 190 }, tableRadius: 55, agents: ['AURORA','VIBE','CHAT','DEAL_IG','LENS'] },
+  { id: 'linkedelite', label: '💼 LINKEDIN', color: '#0077B5', center: { x: 380, y: 360 }, tableRadius: 50, agents: ['NOVA','ORATOR','BRIDGE','ATLAS','DEAL_LI','GRAPH'] },
+  { id: 'pagepower', label: '👥 FACEBOOK', color: '#1877F2', center: { x: 820, y: 360 }, tableRadius: 50, agents: ['CHIEF','PULSE','COMMUNITY','REACH'] },
+  { id: 'webboss', label: '🌐 WEB', color: '#22C55E', center: { x: 600, y: 420 }, tableRadius: 55, agents: ['ROOT','CRAWL','BUILD','SHIELD','SPEED'] },
+]
+
+const AMENITIES = [
+  { id: 'briefing', label: '📋 BRIEFING WALL', x: 40, y: 40, w: 180, h: 70 },
+  { id: 'tv', label: '📺 MEDIA WALL', x: 980, y: 40, w: 180, h: 70 },
+  { id: 'coffee', label: '☕ COFFEE BAR', x: 40, y: 500, w: 200, h: 70 },
+  { id: 'gym', label: '🏀 REC ZONE', x: 960, y: 500, w: 220, h: 70 },
+]
 
 function drawDesk(ctx: CanvasRenderingContext2D, x: number, y: number, color: string) {
   ctx.fillStyle = '#2a2a3a'
@@ -340,58 +356,7 @@ function drawBubble(ctx: CanvasRenderingContext2D, x: number, y: number, msg: st
   ctx.fillText(msg, x, by + 8)
 }
 
-function drawRoomDecor(ctx: CanvasRenderingContext2D, room: typeof ROOMS[0], rx: number, ry: number) {
-  const { border, id } = room
-  // Room-specific decorations
-  if (id === 'xforce') {
-    // Military map on wall
-    ctx.fillStyle = border + '15'
-    ctx.fillRect(rx + RW - 30, ry + 20, 25, 18)
-    ctx.strokeStyle = border + '44'
-    ctx.lineWidth = 0.5
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath()
-      ctx.moveTo(rx + RW - 28, ry + 24 + i * 5)
-      ctx.lineTo(rx + RW - 8, ry + 24 + i * 5)
-      ctx.stroke()
-    }
-  } else if (id === 'gramgod') {
-    // Ring light circles
-    ctx.strokeStyle = '#FF69B4' + '44'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.arc(rx + RW - 15, ry + 25, 8, 0, Math.PI * 2)
-    ctx.stroke()
-    ctx.beginPath()
-    ctx.arc(rx + RW - 15, ry + 25, 5, 0, Math.PI * 2)
-    ctx.stroke()
-  } else if (id === 'intelcore') {
-    // Holographic display
-    ctx.fillStyle = border + '22'
-    ctx.fillRect(rx + 5, ry + 20, 20, 12)
-    ctx.strokeStyle = border + '66'
-    ctx.lineWidth = 0.5
-    ctx.strokeRect(rx + 5, ry + 20, 20, 12)
-  } else if (id === 'webboss') {
-    // Server rack
-    ctx.fillStyle = '#1a2a1a'
-    ctx.fillRect(rx + RW - 20, ry + 20, 15, 30)
-    for (let i = 0; i < 5; i++) {
-      ctx.fillStyle = border + '66'
-      ctx.fillRect(rx + RW - 18, ry + 22 + i * 5, 11, 3)
-    }
-  } else if (id === 'financedesk') {
-    // Chart on wall
-    ctx.strokeStyle = border + '44'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(rx + RW - 28, ry + 35)
-    ctx.lineTo(rx + RW - 22, ry + 28)
-    ctx.lineTo(rx + RW - 16, ry + 32)
-    ctx.lineTo(rx + RW - 10, ry + 22)
-    ctx.stroke()
-  }
-}
+// (grid-era room decor removed — mega-office uses amenities + zone visuals)
 
 // ── Main component ────────────────────────────────────────────
 export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) {
@@ -407,12 +372,22 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
 
   useEffect(() => {
-    ROOMS.forEach((room, ri) => {
-      const col = ri % COLS, row = Math.floor(ri / ROWS)
-      const rx = col * RW, ry = row * RH
-      const desks = getDesks(rx, ry, RW, RH, room.agents.length)
-      room.agents.forEach((name, i) => {
-        const d = desks[i]
+    // Restore positions so the office doesn't "restart" on login
+    try {
+      const saved = localStorage.getItem('propost.office.anims')
+      if (saved) {
+        const parsed = JSON.parse(saved) as Record<string, Partial<AgentAnim>>
+        Object.entries(parsed).forEach(([name, v]) => {
+          const existing = animsRef.current.get(name)
+          if (existing) Object.assign(existing, v)
+        })
+      }
+    } catch { /* ignore */ }
+
+    ZONES.forEach((z) => {
+      const seats = getRoundTableSeats(z.center.x, z.center.y, z.tableRadius, z.agents.length)
+      z.agents.forEach((name, i) => {
+        const d = seats[i]
         desksRef.current.set(name, d)
         if (!animsRef.current.has(name)) {
           const tasks = TASKS[name] ?? ['Working...']
@@ -420,11 +395,11 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
             x: d.x, y: d.y, tx: d.x, ty: d.y, homeX: d.x, homeY: d.y,
             phase: Math.random() * Math.PI * 2, walkPhase: 0,
             isWalking: false,
-            chatTimer: 3 + Math.random() * 8, chatMsg: '', showChat: false, chatLife: 0,
+            chatTimer: 2 + Math.random() * 6, chatMsg: '', showChat: false, chatLife: 0,
             isTalking: false, talkPhase: 0,
-            isSitting: true, sitTimer: 5 + Math.random() * 12,
+            isSitting: true, sitTimer: 4 + Math.random() * 10,
             taskLabel: tasks[Math.floor(Math.random() * tasks.length)],
-            taskTimer: 15 + Math.random() * 30,
+            taskTimer: 10 + Math.random() * 20,
             facing: 1,
             status: 'working',
           })
@@ -447,64 +422,59 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
     ctx.fillStyle = '#0A0A14'
     ctx.fillRect(0, 0, CW, CH)
 
-    ROOMS.forEach((room, ri) => {
-      const col = ri % COLS, row = Math.floor(ri / ROWS)
-      const rx = col * RW, ry = row * RH
+    // Background mega-office floor tiles
+    ctx.strokeStyle = '#1E1E3A22'
+    ctx.lineWidth = 0.5
+    for (let x = 0; x < CW; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CH); ctx.stroke() }
+    for (let y = 0; y < CH; y += 24) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CW, y); ctx.stroke() }
 
-      // Room bg
-      ctx.fillStyle = room.bg
-      ctx.fillRect(rx, ry, RW, RH)
-
-      // Floor tiles
-      ctx.strokeStyle = room.border + '12'
-      ctx.lineWidth = 0.5
-      for (let tx2 = rx; tx2 < rx + RW; tx2 += 20) {
-        ctx.beginPath(); ctx.moveTo(tx2, ry); ctx.lineTo(tx2, ry + RH); ctx.stroke()
-      }
-      for (let ty2 = ry; ty2 < ry + RH; ty2 += 20) {
-        ctx.beginPath(); ctx.moveTo(rx, ty2); ctx.lineTo(rx + RW, ty2); ctx.stroke()
-      }
-
-      // Room decor
-      drawRoomDecor(ctx, room, rx, ry)
-
-      // Room border (highlight if selected)
-      ctx.strokeStyle = selectedRoom === room.id ? room.border : room.border + '88'
-      ctx.lineWidth = selectedRoom === room.id ? 2 : 1.5
-      ctx.strokeRect(rx + 1, ry + 1, RW - 2, RH - 2)
-
-      // Header bar
-      ctx.fillStyle = room.border + '22'
-      ctx.fillRect(rx, ry, RW, 18)
-      ctx.fillStyle = room.border
-      ctx.font = '5px "Press Start 2P", monospace'
-      ctx.textAlign = 'left'
-      ctx.fillText(room.label, rx + 5, ry + 10)
-      ctx.fillStyle = room.border + 'AA'
-      ctx.font = '3.5px monospace'
-      ctx.fillText(room.sub, rx + 5, ry + 16)
-
-      // Music note
-      ctx.fillStyle = room.border + '88'
+    // Amenities
+    AMENITIES.forEach((a) => {
+      ctx.fillStyle = '#12121F'
+      ctx.strokeStyle = '#1E1E3A'
+      ctx.lineWidth = 1
+      ctx.fillRect(a.x, a.y, a.w, a.h)
+      ctx.strokeRect(a.x, a.y, a.w, a.h)
+      ctx.fillStyle = '#64748B'
       ctx.font = '6px monospace'
-      ctx.textAlign = 'right'
-      ctx.fillText(room.music, rx + RW - 5, ry + 10)
+      ctx.textAlign = 'left'
+      ctx.fillText(a.label, a.x + 8, a.y + 16)
+    })
 
-      // Performance indicator (pulse dot)
-      const pulse = 0.4 + 0.6 * Math.abs(Math.sin(timeRef.current / 800 + ri))
-      ctx.fillStyle = room.border
+    // Zones + round tables
+    ZONES.forEach((z, zi) => {
+      const pulse = 0.4 + 0.6 * Math.abs(Math.sin(timeRef.current / 900 + zi))
+      ctx.fillStyle = z.color + '14'
+      ctx.beginPath()
+      ctx.arc(z.center.x, z.center.y, z.tableRadius + 28, 0, Math.PI * 2)
+      ctx.fill()
+
+      // round table
+      ctx.fillStyle = '#1E1E3A'
+      ctx.beginPath()
+      ctx.arc(z.center.x, z.center.y, z.tableRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = z.color + '88'
       ctx.globalAlpha = pulse
-      ctx.beginPath(); ctx.arc(rx + RW - 8, ry + 14, 2.5, 0, Math.PI * 2); ctx.fill()
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(z.center.x, z.center.y, z.tableRadius + 10, 0, Math.PI * 2)
+      ctx.stroke()
       ctx.globalAlpha = 1
 
-      // Draw desks
-      room.agents.forEach(name => {
+      ctx.fillStyle = z.color
+      ctx.font = '6px "Press Start 2P", monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText(z.label, z.center.x, z.center.y - z.tableRadius - 18)
+
+      // Seats (desks)
+      z.agents.forEach((name) => {
         const d = desksRef.current.get(name)
-        if (d) drawDesk(ctx, d.x, d.y, room.border)
+        if (d) drawDesk(ctx, d.x, d.y, z.color)
       })
 
-      // Update + draw agents
-      room.agents.forEach(name => {
+      // Agents
+      z.agents.forEach(name => {
         const a = animsRef.current.get(name)
         if (!a) return
 
@@ -515,18 +485,31 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
           a.taskTimer = 15 + Math.random() * 30
         }
 
+        // Movement logic: roam between (table seat) and amenities, plus “briefing chain” behavior.
         a.sitTimer -= dt
         if (a.sitTimer <= 0) {
           a.isSitting = !a.isSitting
           a.sitTimer = a.isSitting ? 8 + Math.random() * 15 : 3 + Math.random() * 6
           if (!a.isSitting) {
-            const others = room.agents.filter(n => n !== name)
-            if (others.length > 0 && Math.random() < 0.5) {
-              const target = animsRef.current.get(others[Math.floor(Math.random() * others.length)])
-              if (target) { a.tx = target.x + (Math.random() - 0.5) * 12; a.ty = target.y }
+            // hierarchy: workers visit their CEO zone center; CEOs occasionally go to COMMAND.
+            const isCommander = name === 'SOVEREIGN' || name === 'EUGINE'
+            const isCeo = ['ZARA','NOVA','AURORA','CHIEF','ROOT','PEOPLE','JUDGE','BANKER','SOVEREIGN'].includes(name)
+            if (isCommander) {
+              a.tx = ZONES[0].center.x + (Math.random() - 0.5) * 40
+              a.ty = ZONES[0].center.y + (Math.random() - 0.5) * 20
+            } else if (isCeo && Math.random() < 0.35) {
+              a.tx = ZONES[0].center.x + (Math.random() - 0.5) * 70
+              a.ty = ZONES[0].center.y + (Math.random() - 0.5) * 30
+            } else if (Math.random() < 0.25) {
+              const amen = AMENITIES[Math.floor(Math.random() * AMENITIES.length)]
+              a.tx = amen.x + 20 + Math.random() * (amen.w - 40)
+              a.ty = amen.y + 30 + Math.random() * (amen.h - 40)
             } else {
-              a.tx = a.homeX + (Math.random() - 0.5) * 20
-              a.ty = a.homeY + (Math.random() - 0.5) * 10
+              // visit another teammate at same table
+              const others = z.agents.filter(n => n !== name)
+              const target = animsRef.current.get(others[Math.floor(Math.random() * others.length)])
+              if (target) { a.tx = target.x + (Math.random() - 0.5) * 18; a.ty = target.y + (Math.random() - 0.5) * 10 }
+              else { a.tx = a.homeX; a.ty = a.homeY }
             }
             a.isWalking = true
           } else {
@@ -573,10 +556,10 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
         const outfit = OUTFITS[name] ?? ['#888','#333','#C68642']
         drawHuman(ctx, dx2, dy2, outfit as [string,string,string], name, a.facing, a.walkPhase, a.isTalking, a.talkPhase, a.isSitting, name === 'EUGINE', a.status)
 
-        if (a.showChat) drawBubble(ctx, dx2, dy2 - 5, a.chatMsg, room.border)
+        if (a.showChat) drawBubble(ctx, dx2, dy2 - 5, a.chatMsg, z.color)
 
         if (!a.isWalking && a.isSitting) {
-          ctx.fillStyle = room.border + '88'
+          ctx.fillStyle = z.color + '88'
           ctx.font = '3px monospace'
           ctx.textAlign = 'center'
           const tl = a.taskLabel.length > 14 ? a.taskLabel.slice(0, 14) + '…' : a.taskLabel
@@ -585,14 +568,15 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
       })
     })
 
-    // Grid dividers
-    ctx.strokeStyle = '#1E1E3A'
-    ctx.lineWidth = 1
-    for (let c = 1; c < COLS; c++) {
-      ctx.beginPath(); ctx.moveTo(c * RW, 0); ctx.lineTo(c * RW, CH); ctx.stroke()
-    }
-    for (let r = 1; r < ROWS; r++) {
-      ctx.beginPath(); ctx.moveTo(0, r * RH); ctx.lineTo(CW, r * RH); ctx.stroke()
+    // Persist state periodically so it doesn't "restart" on login
+    if (Math.floor(timeRef.current) % 2000 < 40) {
+      try {
+        const out: Record<string, Partial<AgentAnim>> = {}
+        animsRef.current.forEach((v, k) => {
+          out[k] = { x: v.x, y: v.y, tx: v.tx, ty: v.ty, isSitting: v.isSitting, sitTimer: v.sitTimer, taskLabel: v.taskLabel }
+        })
+        localStorage.setItem('propost.office.anims', JSON.stringify(out))
+      } catch { /* ignore */ }
     }
 
     animRef.current = requestAnimationFrame(render)
@@ -618,49 +602,56 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
       }
     }
 
-    // Check room click
-    ROOMS.forEach((room, ri) => {
-      const col = ri % COLS, row = Math.floor(ri / ROWS)
-      const rx = col * RW, ry = row * RH
-      if (mx >= rx && mx <= rx + RW && my >= ry && my <= ry + RH) {
-        setSelectedRoom((prev) => prev === room.id ? null : room.id)
-      }
-    })
+    // No heavy room selection logic (keeps INP low)
   }, [onAgentClick])
 
+  // Mousemove can be hot; keep it light (avoid heavy loops per event)
+  const hoverRef = useRef<{ mx: number; my: number; cx: number; cy: number } | null>(null)
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current; if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const mx = (e.clientX - rect.left) * (CW / rect.width)
     const my = (e.clientY - rect.top) * (CH / rect.height)
-    for (const [name, pos] of Array.from(posRef.current.entries())) {
-      if (mx >= pos.x - 10 && mx <= pos.x + 10 && my >= pos.y - 5 && my <= pos.y + 32) {
-        const a = animsRef.current.get(name)
-        setTooltip({ name, task: a?.taskLabel ?? '', x: e.clientX - rect.left, y: e.clientY - rect.top - 35 })
-        return
+    hoverRef.current = { mx, my, cx: e.clientX - rect.left, cy: e.clientY - rect.top }
+  }, [])
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const h = hoverRef.current
+      if (h) {
+        for (const [name, pos] of Array.from(posRef.current.entries())) {
+          if (h.mx >= pos.x - 10 && h.mx <= pos.x + 10 && h.my >= pos.y - 5 && h.my <= pos.y + 32) {
+            const a = animsRef.current.get(name)
+            setTooltip({ name, task: a?.taskLabel ?? '', x: h.cx, y: h.cy - 35 })
+            raf = requestAnimationFrame(tick)
+            return
+          }
+        }
+        setTooltip(null)
       }
+      raf = requestAnimationFrame(tick)
     }
-    setTooltip(null)
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [])
 
   const callMeeting = useCallback(() => {
-    ROOMS.forEach(room => {
-      room.agents.forEach(name => {
-        const a = animsRef.current.get(name)
-        const sov = animsRef.current.get('SOVEREIGN') ?? animsRef.current.get('EUGINE')
-        if (a && sov && name !== 'SOVEREIGN' && name !== 'EUGINE') {
-          a.tx = sov.x + (Math.random() - 0.5) * 60
-          a.ty = sov.y + (Math.random() - 0.5) * 30
-          a.isWalking = true; a.isSitting = false
-        }
-      })
+    const commander = animsRef.current.get('SOVEREIGN') ?? animsRef.current.get('EUGINE')
+    if (!commander) return
+    const cx = commander.x, cy = commander.y
+    Array.from(animsRef.current.entries()).forEach(([name, a]) => {
+      if (name === 'SOVEREIGN' || name === 'EUGINE') return
+      a.tx = cx + (Math.random() - 0.5) * 120
+      a.ty = cy + (Math.random() - 0.5) * 70
+      a.isWalking = true
+      a.isSitting = false
     })
     setMeeting(true)
     setTimeout(() => setMeeting(false), 15000)
   }, [])
 
-  const selectedRoomData = ROOMS.find((r) => r.id === selectedRoom)
-  const totalAgents = ROOMS.reduce((s, r) => s + r.agents.length, 0)
+  const totalAgents = ZONES.reduce((s, z) => s + z.agents.length, 0)
 
   return (
     <div className="relative w-full">
@@ -669,11 +660,9 @@ export default function OfficeCanvas({ agentStates = {}, onAgentClick }: Props) 
           🏢 PROPOST VIRTUAL HQ — {totalAgents} AGENTS · 9 COMPANIES
         </span>
         <div className="flex items-center gap-2">
-          {selectedRoomData && (
-            <span style={{ color: selectedRoomData.border, fontSize: 7, fontFamily: 'monospace' }}>
-              {selectedRoomData.label} · {selectedRoomData.theme} · {selectedRoomData.agents.length} agents
-            </span>
-          )}
+          <span style={{ color: '#64748B', fontSize: 7, fontFamily: 'monospace' }}>
+            Mega Office · round tables · live movement
+          </span>
           <button
             onClick={callMeeting}
             className="px-2 py-1 rounded text-xs"

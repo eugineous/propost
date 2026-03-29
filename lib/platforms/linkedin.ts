@@ -30,8 +30,10 @@ async function liFetch(path: string, options: RequestInit = {}): Promise<Respons
 
 export async function publishPost(content: string): Promise<{ postId: string }> {
   return withRetry(async () => {
+    const author = process.env.LINKEDIN_AUTHOR_URN
+    if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
     const body = {
-      author: `urn:li:person:${process.env.LINKEDIN_CLIENT_ID}`,
+      author,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
@@ -61,8 +63,10 @@ export async function publishArticle(
   content: string
 ): Promise<{ articleId: string }> {
   return withRetry(async () => {
+    const author = process.env.LINKEDIN_AUTHOR_URN
+    if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
     const body = {
-      author: `urn:li:person:${process.env.LINKEDIN_CLIENT_ID}`,
+      author,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {

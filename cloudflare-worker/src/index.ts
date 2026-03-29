@@ -10,6 +10,7 @@ export interface Env {
   FACEBOOK_APP_SECRET: string
   LINKEDIN_CLIENT_SECRET: string
   INTERNAL_SECRET: string
+  CRON_SECRET: string
 }
 
 type Platform = 'x' | 'instagram' | 'facebook' | 'linkedin'
@@ -107,5 +108,18 @@ export default {
     }).catch((err) => console.error('[worker] Forward failed:', err))
 
     return new Response('OK', { status: 200 })
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    // Always-on autopilot tick: keeps the empire working even when dashboard is closed.
+    const url = `${env.VERCEL_URL}/api/cron/autopilot`
+    ctx.waitUntil(
+      fetch(url, {
+        headers: {
+          'x-cron-secret': env.CRON_SECRET,
+          'x-internal-secret': env.INTERNAL_SECRET,
+        },
+      }).catch(() => {})
+    )
   },
 }
