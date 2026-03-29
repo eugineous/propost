@@ -5,42 +5,30 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 export default function LoginClient() {
-  const { data: session, status } = useSession()
+  const { status } = useSession()
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  const callbackUrl = searchParams.get('callbackUrl') ?? '/'
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (status === 'authenticated' && session) {
-      router.replace('/')
+    if (status === 'authenticated') {
+      router.replace(callbackUrl)
     }
-  }, [status, session, router])
+  }, [status, callbackUrl, router])
 
   const handleSignIn = async () => {
     setLoading(true)
-    try {
-      await signIn('google', {
-        callbackUrl: '/',
-        redirect: true,
-      })
-    } catch {
-      setLoading(false)
-    }
+    await signIn('google', { callbackUrl: '/' })
   }
 
-  if (status === 'loading') {
+  if (status === 'loading' || status === 'authenticated') {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#0A0A14' }}>
-        <div className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>LOADING...</div>
-      </div>
-    )
-  }
-
-  if (status === 'authenticated') {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#0A0A14' }}>
-        <div className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>REDIRECTING...</div>
+        <div className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>
+          {status === 'authenticated' ? 'ENTERING THE EMPIRE...' : 'LOADING...'}
+        </div>
       </div>
     )
   }
