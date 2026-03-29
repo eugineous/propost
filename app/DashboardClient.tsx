@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState, useCallback, useEffect } from 'react'
-import OfficeCanvas from '@/components/OfficeCanvas'
+import HQOffice from '@/components/hq/HQOffice'
 import ActivityFeed from '@/components/ActivityFeed'
 import MetricsPanel from '@/components/MetricsPanel'
 import CommandPanel from '@/components/CommandPanel'
@@ -251,7 +251,7 @@ export default function DashboardClient() {
                 </button>
               </div>
             )}
-            <OfficeCanvas agentStates={agentStates} onAgentClick={handleAgentClick} />
+            <HQOffice agentStates={agentStates} onAgentClick={handleAgentClick} />
           </div>
 
           <div className="flex-1 overflow-hidden" style={{ background: '#0D0D1A' }}>

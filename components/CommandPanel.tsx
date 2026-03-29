@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import type { CharacterState } from '@/lib/types'
 
 const CORP_COLORS: Record<string, string> = {
@@ -44,6 +44,38 @@ export default function CommandPanel({ agentStates = {} }: CommandPanelProps) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string; detail?: string } | null>(null)
+  const [isListening, setIsListening] = useState(false)
+  const recogRef = useRef<SpeechRecognition | null>(null)
+
+  const speechSupported = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    return Boolean(SR)
+  }, [])
+
+  useEffect(() => {
+    if (!speechSupported) return
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
+    const recog: SpeechRecognition = new SR()
+    recog.continuous = false
+    recog.interimResults = true
+    recog.lang = 'en-KE'
+    recog.onresult = (evt) => {
+      let text = ''
+      for (let i = evt.resultIndex; i < evt.results.length; i++) {
+        text += evt.results[i]?.[0]?.transcript ?? ''
+      }
+      if (text) setInput((prev) => (prev ? `${prev} ${text}` : text))
+    }
+    recog.onend = () => setIsListening(false)
+    recog.onerror = () => setIsListening(false)
+    recogRef.current = recog
+    return () => {
+      try { recog.stop() } catch { /* ignore */ }
+      recogRef.current = null
+    }
+  }, [speechSupported])
 
   const execute = useCallback(async (text: string) => {
     if (!text.trim() || loading) return
@@ -75,6 +107,19 @@ export default function CommandPanel({ agentStates = {} }: CommandPanelProps) {
     }
   }, [loading])
 
+  const toggleListening = useCallback(() => {
+    if (!speechSupported || loading) return
+    const recog = recogRef.current
+    if (!recog) return
+    if (isListening) {
+      try { recog.stop() } catch { /* ignore */ }
+      setIsListening(false)
+      return
+    }
+    setIsListening(true)
+    try { recog.start() } catch { setIsListening(false) }
+  }, [speechSupported, isListening, loading])
+
   const sendOverride = useCallback(async (command: string) => {
     try {
       const res = await fetch('/api/override', {
@@ -95,6 +140,27 @@ export default function CommandPanel({ agentStates = {} }: CommandPanelProps) {
 
       {/* Command input */}
       <div className="rounded p-2 flex flex-col gap-2" style={{ background: '#12121F', border: '1px solid #1E1E3A' }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="pixel-text text-pp-muted" style={{ fontSize: 7 }}>
+            {speechSupported ? 'VOICE READY' : 'VOICE UNAVAILABLE'}
+          </div>
+          <button
+            onClick={toggleListening}
+            disabled={!speechSupported || loading}
+            className="rounded px-2 py-1 disabled:opacity-40"
+            style={{
+              background: isListening ? 'rgba(0,240,255,0.14)' : 'rgba(148,163,184,0.10)',
+              border: `1px solid ${isListening ? '#00F0FF55' : '#1E1E3A'}`,
+              color: isListening ? '#00F0FF' : '#94A3B8',
+              fontSize: 8,
+              fontFamily: 'monospace',
+              cursor: 'pointer',
+            }}
+            title="Voice to text (Web Speech API)"
+          >
+            {isListening ? '🎙️ LISTENING…' : '🎤 VOICE'}
+          </button>
+        </div>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
