@@ -125,4 +125,7 @@ const CORP_AGENT_MAP: Record<Corp, string[]> = {
   gramgod: ['aurora', 'vibe', 'chat', 'deal_ig', 'lens'],
   pagepower: ['chief', 'pulse', 'community', 'reach'],
   webboss: ['root', 'crawl', 'build', 'shield', 'speed'],
+  hrforce: ['people', 'welfare', 'rotate', 'discipline', 'reward', 'brief', 'onboard', 'culture', 'train', 'eval', 'social', 'advocate'],
+  legalshield: ['judge', 'policy', 'risk', 'copyright', 'gdpr', 'defame', 'shadow', 'appeal', 'counsel'],
+  financedesk: ['banker', 'deal_fd', 'rate', 'invoice', 'sponsor', 'revenue', 'pitch', 'collab_fd', 'grants', 'forecast_fd'],
 }
