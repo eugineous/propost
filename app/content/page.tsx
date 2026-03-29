@@ -240,6 +240,7 @@ export default function ContentPage() {
   const [repurposeItem, setRepurposeItem] = useState<ContentItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [seedingEmergency, setSeedingEmergency] = useState(false)
+  const [governing, setGoverning] = useState(false)
   const [scheduling, setScheduling] = useState<Record<string, boolean>>({})
   const [scheduleInputs, setScheduleInputs] = useState<Record<string, string>>({})
 
@@ -335,6 +336,21 @@ export default function ContentPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setGoverning(true)
+                try {
+                  await fetch('/api/content/govern', { method: 'POST' })
+                  await fetchContent()
+                } finally {
+                  setGoverning(false)
+                }
+              }}
+              className="px-3 py-2 rounded"
+              style={{ background: '#22C55E22', color: '#22C55E', border: '1px solid #22C55E44', fontSize: 10, fontFamily: 'monospace', fontWeight: 700 }}
+            >
+              {governing ? 'GOVERNING...' : '🛡️ AUTO-GOVERN'}
+            </button>
             <button
               onClick={async () => {
                 setLoading(true)
