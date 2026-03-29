@@ -1,36 +1,19 @@
 'use client'
 
-import { signIn, useSession } from 'next-auth/react'
-import { useEffect, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { signIn } from 'next-auth/react'
+import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 export default function LoginClient() {
-  const { status } = useSession()
-  const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
-  const callbackUrl = searchParams.get('callbackUrl') ?? '/'
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (status === 'authenticated') {
-      router.replace(callbackUrl)
-    }
-  }, [status, callbackUrl, router])
 
   const handleSignIn = async () => {
     setLoading(true)
-    await signIn('google', { callbackUrl: '/' })
-  }
-
-  if (status === 'loading' || status === 'authenticated') {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#0A0A14' }}>
-        <div className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>
-          {status === 'authenticated' ? 'ENTERING THE EMPIRE...' : 'LOADING...'}
-        </div>
-      </div>
-    )
+    // redirect: true (default) — NextAuth handles the full OAuth flow
+    // and redirects to callbackUrl after success
+    signIn('google', { callbackUrl: '/' })
   }
 
   const errorMessage = error === 'OAuthCallback'
@@ -83,7 +66,7 @@ export default function LoginClient() {
             cursor: loading ? 'not-allowed' : 'pointer',
           }}
         >
-          {loading ? 'SIGNING IN...' : '🔐 SIGN IN WITH GOOGLE'}
+          {loading ? 'REDIRECTING TO GOOGLE...' : '🔐 SIGN IN WITH GOOGLE'}
         </button>
 
         <div className="text-pp-muted" style={{ fontSize: 8 }}>
