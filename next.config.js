@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['@neondatabase/serverless', 'playwright'],
   experimental: {
-    serverComponentsExternalPackages: ['@neondatabase/serverless'],
+    serverComponentsExternalPackages: ['@neondatabase/serverless', 'playwright'],
   },
 }
 
