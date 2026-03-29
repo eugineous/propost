@@ -6,21 +6,52 @@ import OfficeCanvas from '@/components/OfficeCanvas'
 import ActivityFeed from '@/components/ActivityFeed'
 import MetricsPanel from '@/components/MetricsPanel'
 import CommandPanel from '@/components/CommandPanel'
+import WatercoolerChat from '@/components/WatercoolerChat'
 import type { CharacterState } from '@/lib/types'
 
 const NAV_LINKS = [
   { href: '/', label: '🏢 Empire' },
   { href: '/monitor', label: '🖥️ Monitor' },
   { href: '/analytics', label: '📊 Analytics' },
+  { href: '/inbox', label: '📥 Inbox' },
+  { href: '/brand-deals', label: '💰 Brand Deals' },
   { href: '/messages', label: '💬 Messages' },
   { href: '/settings', label: '⚙️ Settings' },
 ]
+
+function NairobiClock() {
+  const [time, setTime] = useState('')
+
+  useEffect(() => {
+    const update = () => {
+      const now = new Date()
+      const eat = new Intl.DateTimeFormat('en-KE', {
+        timeZone: 'Africa/Nairobi',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(now)
+      setTime(eat)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  return (
+    <span className="font-mono" style={{ fontSize: 8, color: '#64748B' }}>
+      🕐 {time} EAT
+    </span>
+  )
+}
 
 export default function DashboardClient() {
   const [agentStates] = useState<Record<string, CharacterState>>({})
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [empireStatus, setEmpireStatus] = useState<'starting' | 'online'>('starting')
   const [liveStats, setLiveStats] = useState<{ totalActionsToday: number; postsToday: number; trendsToday: number } | null>(null)
+  const [notifCount, setNotifCount] = useState(0)
 
   // Fire autonomous startup on mount
   useEffect(() => {
@@ -51,6 +82,25 @@ export default function DashboardClient() {
     return () => clearInterval(interval)
   }, [])
 
+  // Poll pending messages for notification count
+  useEffect(() => {
+    const fetchNotifs = async () => {
+      try {
+        const res = await fetch('/api/inbox')
+        const json = await res.json() as { ok: boolean; messages?: Array<{ status: string }> }
+        if (json.ok) {
+          const pending = (json.messages ?? []).filter((m) => m.status === 'pending').length
+          setNotifCount(pending)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchNotifs()
+    const interval = setInterval(fetchNotifs, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
   const handleAgentClick = useCallback((agentName: string) => {
     setSelectedAgent(agentName)
   }, [])
@@ -65,11 +115,19 @@ export default function DashboardClient() {
         className="flex items-center justify-between px-6 py-3 border-b border-pp-border flex-shrink-0"
         style={{ background: '#12121F' }}
       >
-        <div className="flex items-center gap-8">
-          <span className="pixel-text text-pp-gold" style={{ fontSize: 11 }}>
-            PROPOST EMPIRE
-          </span>
-          <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <span className="pixel-text text-pp-gold" style={{ fontSize: 11 }}>
+              PROPOST EMPIRE
+            </span>
+            <span
+              className="px-1.5 py-0.5 rounded pixel-text"
+              style={{ fontSize: 6, background: '#FFD70022', color: '#FFD700', border: '1px solid #FFD70044' }}
+            >
+              9 COMPANIES ACTIVE
+            </span>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -83,6 +141,7 @@ export default function DashboardClient() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <NairobiClock />
           {liveStats && (
             <div className="flex items-center gap-3" style={{ fontSize: 8, fontFamily: 'monospace' }}>
               <span style={{ color: '#FFD700' }}>{liveStats.totalActionsToday} actions</span>
@@ -90,6 +149,24 @@ export default function DashboardClient() {
               <span style={{ color: '#E1306C' }}>{liveStats.trendsToday} trends</span>
             </div>
           )}
+          {/* Notification bell */}
+          <Link href="/inbox" className="relative flex items-center" style={{ fontSize: 14 }}>
+            🔔
+            {notifCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 flex items-center justify-center rounded-full font-mono font-bold"
+                style={{
+                  width: 14,
+                  height: 14,
+                  background: '#EF4444',
+                  color: '#fff',
+                  fontSize: 7,
+                }}
+              >
+                {notifCount > 99 ? '99+' : notifCount}
+              </span>
+            )}
+          </Link>
           <div
             className="flex items-center gap-2 px-2 py-1 rounded"
             style={{ background: empireStatus === 'online' ? 'rgba(34,197,94,0.1)' : 'rgba(251,191,36,0.1)', fontSize: 8, fontFamily: 'monospace' }}
@@ -156,12 +233,17 @@ export default function DashboardClient() {
           </div>
         </main>
 
-        {/* Right — Command Panel */}
+        {/* Right — Command Panel + Watercooler */}
         <aside
-          className="border-l border-pp-border overflow-y-auto"
+          className="border-l border-pp-border overflow-y-auto flex flex-col"
           style={{ background: '#12121F' }}
         >
-          <CommandPanel agentStates={agentStates} />
+          <div className="flex-1 overflow-y-auto">
+            <CommandPanel agentStates={agentStates} />
+          </div>
+          <div className="border-t border-pp-border flex-shrink-0">
+            <WatercoolerChat />
+          </div>
         </aside>
       </div>
     </div>
