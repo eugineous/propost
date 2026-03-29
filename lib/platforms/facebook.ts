@@ -99,20 +99,26 @@ export async function getMetrics(): Promise<{
   engagementRate: number
 }> {
   return withRetry(async () => {
-    const res = await fbFetch(
-      `/${pageId()}?fields=fan_count,followers_count`
-    )
+    const profileRes = await fbFetch(`/${pageId()}?fields=fan_count,followers_count`)
+    if (!profileRes.ok) throw new Error(`FB profile metrics failed: ${profileRes.status} ${await profileRes.text()}`)
+    const profile = await profileRes.json() as { fan_count: number; followers_count: number }
 
-    if (!res.ok) {
-      console.warn(`[facebook] getMetrics failed: ${res.status}`)
-      return { followers: 0, impressions: 0, engagementRate: 0 }
+    const insightsRes = await fbFetch(`/${pageId()}/insights?metric=page_impressions,page_engaged_users&period=day`)
+    if (!insightsRes.ok) throw new Error(`FB insights failed: ${insightsRes.status} ${await insightsRes.text()}`)
+    const insights = await insightsRes.json() as {
+      data?: Array<{ name: string; values?: Array<{ value: number }> }>
     }
 
-    const json = await res.json() as { fan_count: number; followers_count: number }
+    const impressions = Number(
+      insights.data?.find((m) => m.name === 'page_impressions')?.values?.[0]?.value ?? 0
+    )
+    const engagedUsers = Number(
+      insights.data?.find((m) => m.name === 'page_engaged_users')?.values?.[0]?.value ?? 0
+    )
     return {
-      followers: json.followers_count ?? json.fan_count ?? 0,
-      impressions: 0,
-      engagementRate: 0,
+      followers: Number(profile.followers_count ?? profile.fan_count ?? 0),
+      impressions,
+      engagementRate: impressions > 0 ? engagedUsers / impressions : 0,
     }
   })
 }

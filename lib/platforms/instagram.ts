@@ -158,20 +158,26 @@ export async function getMetrics(): Promise<{
   engagementRate: number
 }> {
   return withRetry(async () => {
-    const res = await igFetch(
-      `/${accountId()}?fields=followers_count,media_count`
+    const profileRes = await igFetch(`/${accountId()}?fields=followers_count,media_count`)
+    if (!profileRes.ok) throw new Error(`IG profile metrics failed: ${profileRes.status} ${await profileRes.text()}`)
+    const profile = await profileRes.json() as { followers_count: number }
+
+    const insightsRes = await igFetch(`/${accountId()}/insights?metric=impressions,reach,profile_views&period=day`)
+    if (!insightsRes.ok) throw new Error(`IG insights failed: ${insightsRes.status} ${await insightsRes.text()}`)
+    const insights = await insightsRes.json() as {
+      data?: Array<{ name: string; values?: Array<{ value: number }> }>
+    }
+    const impressions = Number(
+      insights.data?.find((m) => m.name === 'impressions')?.values?.[0]?.value ?? 0
+    )
+    const reach = Number(
+      insights.data?.find((m) => m.name === 'reach')?.values?.[0]?.value ?? 0
     )
 
-    if (!res.ok) {
-      console.warn(`[instagram] getMetrics failed: ${res.status}`)
-      return { followers: 0, impressions: 0, engagementRate: 0 }
-    }
-
-    const json = await res.json() as { followers_count: number; media_count: number }
     return {
-      followers: json.followers_count,
-      impressions: 0,
-      engagementRate: 0,
+      followers: Number(profile.followers_count ?? 0),
+      impressions,
+      engagementRate: reach > 0 ? impressions / reach : 0,
     }
   })
 }

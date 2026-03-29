@@ -117,20 +117,43 @@ export async function getMetrics(): Promise<{
   engagementRate: number
 }> {
   return withRetry(async () => {
-    const res = await liFetch(
-      `/networkSizes/urn:li:person:${process.env.LINKEDIN_CLIENT_ID}?edgeType=CompanyFollowedByMember`
+    const organization = process.env.LINKEDIN_ORG_URN
+    if (!organization) throw new Error('LINKEDIN_ORG_URN missing for organization metrics')
+
+    const followersRes = await liFetch(
+      `/organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(organization)}`
+    )
+    if (!followersRes.ok) throw new Error(`LinkedIn follower stats failed: ${followersRes.status} ${await followersRes.text()}`)
+    const followerJson = await followersRes.json() as {
+      elements?: Array<{ followerCounts?: { organicFollowerCount?: number; paidFollowerCount?: number } }>
+    }
+    const followers = Number(
+      (followerJson.elements ?? []).reduce((acc, e) => acc + Number(e.followerCounts?.organicFollowerCount ?? 0) + Number(e.followerCounts?.paidFollowerCount ?? 0), 0)
     )
 
-    if (!res.ok) {
-      console.warn(`[linkedin] getMetrics failed: ${res.status}`)
-      return { followers: 0, impressions: 0, engagementRate: 0 }
+    const pageStatsRes = await liFetch(
+      `/organizationPageStatistics?q=organization&organization=${encodeURIComponent(organization)}`
+    )
+    if (!pageStatsRes.ok) throw new Error(`LinkedIn page stats failed: ${pageStatsRes.status} ${await pageStatsRes.text()}`)
+    const pageJson = await pageStatsRes.json() as {
+      elements?: Array<{
+        totalPageStatistics?: {
+          views?: { allPageViews?: { pageViews?: number } }
+          uniqueVisitors?: { allUniqueVisitors?: { uniqueVisitorsCount?: number } }
+        }
+      }>
     }
+    const impressions = Number(
+      (pageJson.elements ?? []).reduce((acc, e) => acc + Number(e.totalPageStatistics?.views?.allPageViews?.pageViews ?? 0), 0)
+    )
+    const uniqueVisitors = Number(
+      (pageJson.elements ?? []).reduce((acc, e) => acc + Number(e.totalPageStatistics?.uniqueVisitors?.allUniqueVisitors?.uniqueVisitorsCount ?? 0), 0)
+    )
 
-    const json = await res.json() as { firstDegreeSize: number }
     return {
-      followers: json.firstDegreeSize ?? 0,
-      impressions: 0,
-      engagementRate: 0,
+      followers,
+      impressions,
+      engagementRate: impressions > 0 ? uniqueVisitors / impressions : 0,
     }
   })
 }

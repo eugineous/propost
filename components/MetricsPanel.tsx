@@ -1,155 +1,50 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-interface PlatformData {
+type ApiPlatform = {
   platform: string
-  label: string
-  icon: string
-  color: string
+  status: 'ok' | 'stale' | 'no_data' | 'not_connected'
   followers: number | null
   impressions: number | null
-  engagement: number | null
-  posts: number | null
-  dms: number | null
-  error?: string
-  connected: boolean
-  lastSync?: string
+  engagementRate: number | null
+  postsPublished: number | null
+  date: string | null
+  lastSyncedAt: string | null
 }
 
-interface LiveMetrics {
-  platforms: PlatformData[]
+type MetricsResponse = {
+  platforms: ApiPlatform[]
   xImpressionsToday: number
-  goalPct: number
-  actionsToday: number
-  postsToday: number
-  trendsToday: number
-  lastUpdated: string
+  goalCompletionPct: number
 }
 
-const X_GOAL = 5_000_000
+const META: Record<string, { label: string; icon: string; color: string }> = {
+  instagram: { label: 'Instagram', icon: '📸', color: '#E1306C' },
+  x: { label: 'X / Twitter', icon: '𝕏', color: '#1DA1F2' },
+  linkedin: { label: 'LinkedIn', icon: '💼', color: '#0077B5' },
+  facebook: { label: 'Facebook', icon: '👥', color: '#1877F2' },
+}
+
+function statusColor(status: ApiPlatform['status']) {
+  if (status === 'ok') return '#22C55E'
+  if (status === 'stale') return '#F59E0B'
+  if (status === 'no_data') return '#64748B'
+  return '#EF4444'
+}
 
 export default function MetricsPanel() {
-  const [data, setData] = useState<LiveMetrics | null>(null)
+  const [data, setData] = useState<MetricsResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [igError, setIgError] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<string>('—')
 
-  const fetchAll = useCallback(async () => {
+  const fetchMetrics = useCallback(async () => {
     try {
-      const [igRes, monRes] = await Promise.allSettled([
-        fetch('/api/monitor/ig-live'),
-        fetch('/api/monitor/live'),
-      ])
-
-      interface IgResponse {
-        ok: boolean
-        error?: string
-        account?: { followers: number; mediaCount: number; username: string }
-        followers?: number
-        mediaCount?: number
-        username?: string
-        dmsPending?: number
-        dmCount?: number
-        recentPosts?: Array<{ likes: number; comments: number }>
-      }
-
-      let ig: IgResponse | null = null
-      let igFetchError: string | null = null
-
-      if (igRes.status === 'fulfilled') {
-        const parsed = await igRes.value.json() as IgResponse
-        if (parsed?.ok) {
-          ig = parsed
-          setIgError(null)
-        } else {
-          igFetchError = parsed?.error ?? 'Instagram API error'
-          setIgError(igFetchError)
-        }
-      } else {
-        igFetchError = 'Failed to reach Instagram API'
-        setIgError(igFetchError)
-      }
-
-      const mon = monRes.status === 'fulfilled' && monRes.value.ok
-        ? await monRes.value.json() as { ok: boolean; totalActionsToday?: number; postsToday?: number; trendsToday?: number }
-        : null
-
-      // Normalize ig response shape (supports both flat and nested)
-      const igFollowers = ig?.account?.followers ?? ig?.followers ?? null
-      const igMediaCount = ig?.account?.mediaCount ?? ig?.mediaCount ?? null
-      const igDms = ig?.dmsPending ?? ig?.dmCount ?? null
-      const igUsername = ig?.account?.username ?? ig?.username ?? null
-
-      let igEngagement: number | null = null
-      if (ig?.recentPosts && ig.recentPosts.length > 0 && igFollowers) {
-        const totalEng = ig.recentPosts.reduce((s: number, p: { likes: number; comments: number }) => s + p.likes + p.comments, 0)
-        igEngagement = (totalEng / ig.recentPosts.length / igFollowers) * 100
-      }
-
-      const now = new Date().toLocaleTimeString('en-KE')
-
-      const platforms: PlatformData[] = [
-        {
-          platform: 'instagram',
-          label: igUsername ? `Instagram (@${igUsername})` : 'Instagram',
-          icon: '📸',
-          color: '#E1306C',
-          followers: igFollowers,
-          impressions: igMediaCount,
-          engagement: igEngagement,
-          posts: igMediaCount,
-          dms: igDms,
-          error: igFetchError ?? undefined,
-          connected: ig !== null,
-          lastSync: ig ? now : undefined,
-        },
-        {
-          platform: 'x',
-          label: 'X / Twitter',
-          icon: '𝕏',
-          color: '#1DA1F2',
-          followers: null,
-          impressions: null,
-          engagement: null,
-          posts: mon?.postsToday ?? null,
-          dms: null,
-          connected: false,
-        },
-        {
-          platform: 'linkedin',
-          label: 'LinkedIn',
-          icon: '💼',
-          color: '#0077B5',
-          followers: null,
-          impressions: null,
-          engagement: null,
-          posts: null,
-          dms: null,
-          connected: false,
-        },
-        {
-          platform: 'facebook',
-          label: 'Facebook',
-          icon: '👥',
-          color: '#1877F2',
-          followers: null,
-          impressions: null,
-          engagement: null,
-          posts: null,
-          dms: null,
-          connected: false,
-        },
-      ]
-
-      setData({
-        platforms,
-        xImpressionsToday: 0,
-        goalPct: 0,
-        actionsToday: mon?.totalActionsToday ?? 0,
-        postsToday: mon?.postsToday ?? 0,
-        trendsToday: mon?.trendsToday ?? 0,
-        lastUpdated: now,
-      })
+      const res = await fetch('/api/metrics')
+      if (!res.ok) throw new Error(`Metrics fetch failed: ${res.status}`)
+      const json = (await res.json()) as MetricsResponse
+      setData(json)
+      setLastUpdated(new Date().toLocaleTimeString('en-KE'))
     } catch (err) {
       console.error('[MetricsPanel]', err)
     } finally {
@@ -158,55 +53,25 @@ export default function MetricsPanel() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
-    const iv = setInterval(fetchAll, 60_000)
+    fetchMetrics()
+    const iv = setInterval(fetchMetrics, 60_000)
     return () => clearInterval(iv)
-  }, [fetchAll])
+  }, [fetchMetrics])
 
-  const fmt = (n: number | null, suffix = '') => {
-    if (n === null) return <span style={{ color: '#64748B' }}>—</span>
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M${suffix}`
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K${suffix}`
-    return `${n}${suffix}`
+  const fmt = (n: number | null) => {
+    if (n === null) return '—'
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+    return `${n}`
   }
 
   return (
     <div className="h-full flex flex-col overflow-y-auto p-3 gap-3">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="pixel-text text-pp-gold" style={{ fontSize: 8 }}>LIVE METRICS</h2>
-        <div className="flex items-center gap-1">
-          <span
-            style={{
-              width: 5, height: 5, borderRadius: '50%',
-              background: loading ? '#F59E0B' : '#22C55E',
-              display: 'inline-block',
-              boxShadow: loading ? '0 0 4px #F59E0B' : '0 0 4px #22C55E',
-            }}
-          />
-          <span style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace' }}>
-            {data?.lastUpdated ?? 'loading...'}
-          </span>
-        </div>
+        <span style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace' }}>{lastUpdated}</span>
       </div>
 
-      {/* Today's stats bar */}
-      {data && (
-        <div className="grid grid-cols-3 gap-1">
-          {[
-            { label: 'Actions', value: data.actionsToday, color: '#FFD700' },
-            { label: 'Posts', value: data.postsToday, color: '#E1306C' },
-            { label: 'Trends', value: data.trendsToday, color: '#00F0FF' },
-          ].map(s => (
-            <div key={s.label} className="rounded p-1 text-center" style={{ background: '#12121F', border: `1px solid ${s.color}33` }}>
-              <div style={{ fontSize: 12, color: s.color, fontFamily: 'monospace', fontWeight: 'bold' }}>{s.value}</div>
-              <div style={{ fontSize: 7, color: '#64748B' }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Platform cards */}
       {loading ? (
         <div className="space-y-2">
           {[...Array(4)].map((_, i) => (
@@ -214,97 +79,45 @@ export default function MetricsPanel() {
           ))}
         </div>
       ) : (
-        data?.platforms.map(p => (
-          <div key={p.platform} className="rounded p-2" style={{ background: '#12121F', border: `1px solid ${p.color}33` }}>
-            <div className="flex items-center gap-2 mb-2">
-              <span style={{ fontSize: 12 }}>{p.icon}</span>
-              <span style={{ fontSize: 8, color: p.color, fontFamily: '"Press Start 2P", monospace' }}>{p.label}</span>
-              {p.dms !== null && p.dms > 0 && (
-                <span className="ml-auto rounded px-1" style={{ background: '#EF444433', color: '#EF4444', fontSize: 7, fontFamily: 'monospace' }}>
-                  {p.dms} DMs
-                </span>
-              )}
-              {!p.connected && (
-                <span className="ml-auto rounded px-1 py-0.5 cursor-pointer" style={{ background: '#1E1E3A', color: '#64748B', fontSize: 7, fontFamily: 'monospace', border: '1px solid #334155' }}>
-                  Connect
-                </span>
-              )}
-            </div>
-
-            {/* Error state */}
-            {p.error && (
-              <div className="mb-1 rounded px-2 py-1" style={{ background: '#EF444411', border: '1px solid #EF444433' }}>
-                <span style={{ fontSize: 7, color: '#EF4444', fontFamily: 'monospace' }}>
-                  ⚠ {p.error.slice(0, 80)}
+        data?.platforms.map((p) => {
+          const meta = META[p.platform] ?? { label: p.platform, icon: '•', color: '#64748B' }
+          return (
+            <div key={p.platform} className="rounded p-2" style={{ background: '#12121F', border: `1px solid ${meta.color}33` }}>
+              <div className="flex items-center gap-2 mb-2">
+                <span style={{ fontSize: 12 }}>{meta.icon}</span>
+                <span style={{ fontSize: 8, color: meta.color, fontFamily: '"Press Start 2P", monospace' }}>{meta.label}</span>
+                <span className="ml-auto rounded px-1" style={{ background: '#1E1E3A', color: statusColor(p.status), fontSize: 7, fontFamily: 'monospace' }}>
+                  {p.status}
                 </span>
               </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-              <div className="flex justify-between">
-                <span style={{ fontSize: 8, color: '#64748B' }}>Followers</span>
-                <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.followers)}</span>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Followers</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.followers)}</span></div>
+                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Posts</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.postsPublished)}</span></div>
+                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Engagement</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{p.engagementRate === null ? '—' : `${(p.engagementRate * 100).toFixed(2)}%`}</span></div>
+                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Impressions</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.impressions)}</span></div>
               </div>
-              <div className="flex justify-between">
-                <span style={{ fontSize: 8, color: '#64748B' }}>Posts</span>
-                <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.posts)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ fontSize: 8, color: '#64748B' }}>Engagement</span>
-                <span style={{ fontSize: 8, color: p.engagement ? '#22C55E' : '#64748B', fontFamily: 'monospace' }}>
-                  {p.engagement !== null ? `${p.engagement.toFixed(1)}%` : '—'}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span style={{ fontSize: 8, color: '#64748B' }}>Impressions</span>
-                <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.impressions)}</span>
+              <div style={{ fontSize: 7, color: '#334155', fontFamily: 'monospace', marginTop: 4 }}>
+                synced {p.lastSyncedAt ? new Date(p.lastSyncedAt).toLocaleTimeString('en-KE') : '—'}
               </div>
             </div>
-
-            {p.lastSync && (
-              <div className="mt-1" style={{ fontSize: 7, color: '#334155', fontFamily: 'monospace' }}>
-                synced {p.lastSync}
-              </div>
-            )}
-          </div>
-        ))
+          )
+        })
       )}
 
-      {/* Instagram error banner */}
-      {igError && !loading && (
-        <div className="rounded p-2" style={{ background: '#EF444411', border: '1px solid #EF444433' }}>
-          <div style={{ fontSize: 7, color: '#EF4444', fontFamily: 'monospace' }}>
-            Instagram API: {igError.slice(0, 120)}
-          </div>
-          <div style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace', marginTop: 2 }}>
-            Check INSTAGRAM_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ACCOUNT_ID in Vercel env vars
-          </div>
-        </div>
-      )}
-
-      {/* X Monetization */}
       <div className="rounded p-2" style={{ background: '#12121F', border: '1px solid #1DA1F233' }}>
         <div className="flex justify-between mb-1">
           <span style={{ fontSize: 7, color: '#1DA1F2', fontFamily: '"Press Start 2P", monospace' }}>X MONETIZATION</span>
           <span style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace' }}>5M goal</span>
         </div>
         <div className="w-full rounded-full h-2 mb-1" style={{ background: '#1E1E3A' }}>
-          <div className="h-2 rounded-full" style={{ width: `${data?.goalPct ?? 0}%`, background: '#1DA1F2', minWidth: 2 }} />
+          <div className="h-2 rounded-full" style={{ width: `${data?.goalCompletionPct ?? 0}%`, background: '#1DA1F2', minWidth: 2 }} />
         </div>
         <div className="flex justify-between">
           <span style={{ fontSize: 8, color: '#64748B', fontFamily: 'monospace' }}>{(data?.xImpressionsToday ?? 0).toLocaleString()}</span>
-          <span style={{ fontSize: 8, color: '#64748B', fontFamily: 'monospace' }}>{X_GOAL.toLocaleString()}</span>
+          <span style={{ fontSize: 8, color: '#64748B', fontFamily: 'monospace' }}>{(5_000_000).toLocaleString()}</span>
         </div>
       </div>
-
-      {/* Refresh button */}
-      <button
-        onClick={fetchAll}
-        className="w-full rounded py-1"
-        style={{ background: '#1E1E3A', border: '1px solid #1E1E3A', color: '#64748B', fontSize: 8, fontFamily: 'monospace', cursor: 'pointer' }}
-      >
-        ↻ Refresh ({data?.lastUpdated ?? '—'})
-      </button>
     </div>
   )
 }
+

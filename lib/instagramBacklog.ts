@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { agentActions } from '@/lib/schema'
+import { agentActions, messages } from '@/lib/schema'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
@@ -161,14 +161,17 @@ export async function processInstagramBacklog(opts?: { maxConversations?: number
       await db.insert(agentActions).values({
         agentName: 'chat',
         company: 'gramgod',
-        actionType: 'dm_backlog_reply',
+        actionType: 'dm_replied',
         details: {
-          summary: `Replied to @${dm.senderUsername}${isBrandDeal ? ' (brand lead)' : ''}`,
+          summary: `Replied to @${dm.senderUsername} (inbox): "${gen.replyText.slice(0, 60)}"`,
           runBy,
           senderId: dm.senderId,
           senderUsername: dm.senderUsername,
-          messagePreview: dm.messageText.slice(0, 120),
-          replyPreview: gen.replyText.slice(0, 120),
+          senderMessage: dm.messageText.slice(0, 120),
+          messageLocation: 'inbox',
+          replyText: gen.replyText.slice(0, 120),
+          platform: 'instagram',
+          escalatedTo: isBrandDeal ? 'DEAL' : null,
           tier: gen.tier,
           language: gen.language,
           hoursOld,
@@ -176,6 +179,25 @@ export async function processInstagramBacklog(opts?: { maxConversations?: number
           sent,
         },
         outcome: sent ? 'success' : 'failed',
+      })
+
+      // Persist DM + reply trace for inbox/message request visibility.
+      await db.insert(messages).values({
+        platform: 'instagram',
+        platformMsgId: `${dm.conversationId}:${dm.senderId}:${dm.receivedAt.getTime()}`,
+        senderId: dm.senderId,
+        senderUsername: dm.senderUsername,
+        content: dm.messageText,
+        replyContent: sent ? gen.replyText : null,
+        messageLocation: 'inbox',
+        status: sent ? 'replied' : 'pending',
+        isBrandDeal,
+        receivedAt: dm.receivedAt,
+        repliedAt: sent ? new Date() : null,
+        responseTimeMs: Math.max(0, Date.now() - dm.receivedAt.getTime()),
+        agentName: 'chat',
+      }).catch(() => {
+        // Ignore duplicates from repeated backlog runs.
       })
 
       await new Promise((r) => setTimeout(r, 400))

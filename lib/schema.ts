@@ -48,6 +48,7 @@ export const messages = pgTable('messages', {
   senderGender: text('sender_gender'),
   content: text('content').notNull(),
   replyContent: text('reply_content'),
+  messageLocation: text('message_location').default('inbox'), // inbox | message_request
   responseTimeMs: integer('response_time_ms'),
   isBrandDeal: boolean('is_brand_deal').default(false),
   dealValueEst: numeric('deal_value_est'),
