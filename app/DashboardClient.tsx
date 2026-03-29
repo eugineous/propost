@@ -10,6 +10,7 @@ import type { CharacterState } from '@/lib/types'
 
 const NAV_LINKS = [
   { href: '/', label: '🏢 Empire' },
+  { href: '/monitor', label: '🖥️ Monitor' },
   { href: '/analytics', label: '📊 Analytics' },
   { href: '/messages', label: '💬 Messages' },
   { href: '/settings', label: '⚙️ Settings' },
@@ -19,12 +20,35 @@ export default function DashboardClient() {
   const [agentStates] = useState<Record<string, CharacterState>>({})
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [empireStatus, setEmpireStatus] = useState<'starting' | 'online'>('starting')
+  const [liveStats, setLiveStats] = useState<{ totalActionsToday: number; postsToday: number; trendsToday: number } | null>(null)
 
   // Fire autonomous startup on mount
   useEffect(() => {
     fetch('/api/agents/startup', { method: 'POST' })
       .then(() => setEmpireStatus('online'))
       .catch(() => setEmpireStatus('online'))
+  }, [])
+
+  // Poll live stats every 60s
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch('/api/monitor/live')
+        const json = await res.json() as { ok: boolean; totalActionsToday?: number; postsToday?: number; trendsToday?: number }
+        if (json.ok) {
+          setLiveStats({
+            totalActionsToday: json.totalActionsToday ?? 0,
+            postsToday: json.postsToday ?? 0,
+            trendsToday: json.trendsToday ?? 0,
+          })
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchStats()
+    const interval = setInterval(fetchStats, 60000)
+    return () => clearInterval(interval)
   }, [])
 
   const handleAgentClick = useCallback((agentName: string) => {
@@ -59,6 +83,13 @@ export default function DashboardClient() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {liveStats && (
+            <div className="flex items-center gap-3" style={{ fontSize: 8, fontFamily: 'monospace' }}>
+              <span style={{ color: '#FFD700' }}>{liveStats.totalActionsToday} actions</span>
+              <span style={{ color: '#1DA1F2' }}>{liveStats.postsToday} posts</span>
+              <span style={{ color: '#E1306C' }}>{liveStats.trendsToday} trends</span>
+            </div>
+          )}
           <div
             className="flex items-center gap-2 px-2 py-1 rounded"
             style={{ background: empireStatus === 'online' ? 'rgba(34,197,94,0.1)' : 'rgba(251,191,36,0.1)', fontSize: 8, fontFamily: 'monospace' }}
