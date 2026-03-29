@@ -236,6 +236,7 @@ export default function ContentPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [repurposeItem, setRepurposeItem] = useState<ContentItem | null>(null)
   const [loading, setLoading] = useState(false)
+  const [seedingEmergency, setSeedingEmergency] = useState(false)
 
   const fetchContent = useCallback(async () => {
     setLoading(true)
@@ -291,6 +292,7 @@ export default function ContentPage() {
   }
 
   const draftCount = items.filter(i => i.status === 'draft').length
+  const emergencyCount = items.filter(i => i.contentType === 'emergency').length
 
   return (
     <div className="min-h-screen" style={{ background: '#0A0A14', color: '#E2E8F0' }}>
@@ -305,14 +307,40 @@ export default function ContentPage() {
                 {draftCount} PENDING APPROVAL
               </span>
             )}
+            {emergencyCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full" style={{ background: '#00F0FF22', color: '#00F0FF', fontSize: 9, fontFamily: 'monospace', border: '1px solid #00F0FF44' }}>
+                {emergencyCount} EMERGENCY POSTS
+              </span>
+            )}
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-4 py-2 rounded"
-            style={{ background: '#FFD700', color: '#0A0A14', fontSize: 10, fontFamily: 'monospace', fontWeight: 700 }}
-          >
-            + CREATE NEW
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                setSeedingEmergency(true)
+                try {
+                  await fetch('/api/content/emergency', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ count: 50 }),
+                  })
+                  await fetchContent()
+                } finally {
+                  setSeedingEmergency(false)
+                }
+              }}
+              className="px-3 py-2 rounded"
+              style={{ background: '#00F0FF22', color: '#00F0FF', border: '1px solid #00F0FF44', fontSize: 10, fontFamily: 'monospace', fontWeight: 700 }}
+            >
+              {seedingEmergency ? 'SEEDING...' : '⚡ EMERGENCY x50'}
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-4 py-2 rounded"
+              style={{ background: '#FFD700', color: '#0A0A14', fontSize: 10, fontFamily: 'monospace', fontWeight: 700 }}
+            >
+              + CREATE NEW
+            </button>
+          </div>
         </div>
       </div>
 
