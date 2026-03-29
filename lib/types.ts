@@ -9,6 +9,9 @@ export type Corp =
   | 'pagepower'
   | 'webboss'
   | 'intelcore'
+  | 'hrforce'
+  | 'legalshield'
+  | 'financedesk'
 
 export type AgentModel = 'gemini-2.5-pro' | 'nvidia-nim'
 

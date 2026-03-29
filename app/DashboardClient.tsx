@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { href: '/monitor', label: '🖥️ Monitor' },
   { href: '/analytics', label: '📊 Analytics' },
   { href: '/inbox', label: '📥 Inbox' },
+  { href: '/content', label: '📝 Content' },
   { href: '/brand-deals', label: '💰 Brand Deals' },
   { href: '/messages', label: '💬 Messages' },
   { href: '/settings', label: '⚙️ Settings' },
@@ -52,6 +53,7 @@ export default function DashboardClient() {
   const [empireStatus, setEmpireStatus] = useState<'starting' | 'online'>('starting')
   const [liveStats, setLiveStats] = useState<{ totalActionsToday: number; postsToday: number; trendsToday: number } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
+  const [pendingApprovals, setPendingApprovals] = useState(0)
 
   // Fire autonomous startup on mount
   useEffect(() => {
@@ -101,6 +103,22 @@ export default function DashboardClient() {
     return () => clearInterval(interval)
   }, [])
 
+  // Poll pending content approvals
+  useEffect(() => {
+    const fetchApprovals = async () => {
+      try {
+        const res = await fetch('/api/content?status=draft')
+        const json = await res.json() as { ok: boolean; items?: Array<unknown> }
+        if (json.ok) setPendingApprovals((json.items ?? []).length)
+      } catch {
+        // ignore
+      }
+    }
+    fetchApprovals()
+    const interval = setInterval(fetchApprovals, 120000)
+    return () => clearInterval(interval)
+  }, [])
+
   const handleAgentClick = useCallback((agentName: string) => {
     setSelectedAgent(agentName)
   }, [])
@@ -132,10 +150,18 @@ export default function DashboardClient() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-pp-muted hover:text-pp-text transition-colors"
+                className="text-pp-muted hover:text-pp-text transition-colors relative"
                 style={{ fontSize: 10, fontFamily: 'monospace' }}
               >
                 {link.label}
+                {link.href === '/content' && pendingApprovals > 0 && (
+                  <span
+                    className="absolute -top-1 -right-2 flex items-center justify-center rounded-full font-mono font-bold"
+                    style={{ width: 12, height: 12, background: '#FBBF24', color: '#0A0A14', fontSize: 6 }}
+                  >
+                    {pendingApprovals > 9 ? '9+' : pendingApprovals}
+                  </span>
+                )}
               </Link>
             ))}
           </div>
