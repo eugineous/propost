@@ -187,6 +187,20 @@ export async function GET(req: NextRequest) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )`,
 
+    // ── Platform Connections (OAuth tokens) ──────────────────────
+    `CREATE TABLE IF NOT EXISTS platform_connections (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      platform TEXT NOT NULL UNIQUE,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT,
+      expires_at TIMESTAMPTZ,
+      scope TEXT,
+      platform_user_id TEXT,
+      platform_username TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
     `CREATE INDEX IF NOT EXISTS idx_workflow_executions_next_run ON workflow_executions(next_run_at)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_executions_status   ON workflow_executions(status)`,
     `CREATE INDEX IF NOT EXISTS idx_workflow_executions_agent    ON workflow_executions(agent_name)`,

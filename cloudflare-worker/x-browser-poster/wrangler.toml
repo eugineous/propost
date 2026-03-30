@@ -3,6 +3,16 @@ main = "index.js"
 compatibility_date = "2025-09-15"
 compatibility_flags = ["nodejs_compat"]
 
+[build]
+command = ""
+
+[build.upload]
+format = "modules"
+
+[[rules]]
+type = "ESModule"
+globs = ["**/*.js"]
+
 [browser]
 binding = "BROWSER"
 

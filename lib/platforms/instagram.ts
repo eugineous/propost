@@ -4,11 +4,14 @@
 
 import { withRetry } from './retry'
 import { cleanEnvValue } from '@/lib/env'
+import { getToken } from '@/lib/platforms/token'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
 
-function token(): string {
-  return cleanEnvValue(process.env.INSTAGRAM_ACCESS_TOKEN)
+async function token(): Promise<string> {
+  try { return await getToken('instagram') } catch {
+    return cleanEnvValue(process.env.INSTAGRAM_ACCESS_TOKEN)
+  }
 }
 
 function accountId(): string {
@@ -16,8 +19,9 @@ function accountId(): string {
 }
 
 async function igFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const t = await token()
   const sep = path.includes('?') ? '&' : '?'
-  const res = await fetch(`${BASE_URL}${path}${sep}access_token=${token()}`, options)
+  const res = await fetch(`${BASE_URL}${path}${sep}access_token=${t}`, options)
 
   if (res.status === 429) {
     await new Promise((r) => setTimeout(r, 3600000))

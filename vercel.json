@@ -9,7 +9,8 @@
     { "path": "/api/cron/scout", "schedule": "0 7 * * *" },
     { "path": "/api/cron/sentry", "schedule": "0 12 * * *" },
     { "path": "/api/cron/memory", "schedule": "0 23 * * 0" },
-    { "path": "/api/cron/metrics-sync", "schedule": "0 0 * * *" }
+    { "path": "/api/cron/metrics-sync", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/refresh-tokens", "schedule": "0 2 * * *" }
   ],
   "functions": {
     "app/api/**": { "maxDuration": 60 }

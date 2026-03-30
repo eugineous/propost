@@ -175,31 +175,14 @@ export default function SettingsPage() {
         {/* Platform Connections */}
         <div className="pixel-card p-4">
           <h2 className="pixel-text text-pp-gold mb-4" style={{ fontSize: 9 }}>PLATFORM CONNECTIONS</h2>
-          <div className="space-y-3">
-            {PLATFORMS.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-3 rounded" style={{ background: '#0A0A14', border: `1px solid ${p.color}22` }}>
-                <div className="flex items-center gap-3">
-                  <span style={{ fontSize: 16 }}>{p.icon}</span>
-                  <div>
-                    <div className="font-mono font-semibold" style={{ fontSize: 10, color: p.color }}>{p.name}</div>
-                    <div className="text-pp-muted" style={{ fontSize: 8 }}>{p.statusNote}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ background: p.disconnected ? '#64748B' : '#22C55E', boxShadow: p.disconnected ? 'none' : '0 0 6px #22C55E' }}
-                  />
-                  <span
-                    className="font-mono"
-                    style={{ fontSize: 8, color: p.disconnected ? '#64748B' : '#22C55E' }}
-                  >
-                    {p.disconnected ? 'DISCONNECTED' : 'CONNECTED'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="text-pp-muted mb-3" style={{ fontSize: 8 }}>Connect your social media accounts with one click — no API keys needed.</p>
+          <Link
+            href="/settings/connections"
+            className="inline-block px-4 py-2 rounded pixel-text"
+            style={{ fontSize: 8, background: '#1DA1F222', color: '#1DA1F2', border: '1px solid #1DA1F244' }}
+          >
+            🔗 MANAGE CONNECTIONS →
+          </Link>
         </div>
 
         {/* Agent Settings */}

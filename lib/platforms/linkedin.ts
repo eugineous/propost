@@ -4,12 +4,17 @@
 
 import { withRetry } from './retry'
 import { cleanEnvValue } from '@/lib/env'
+import { getToken } from '@/lib/platforms/token'
 
 const BASE_URL = 'https://api.linkedin.com/v2'
 
-function authHeaders(): HeadersInit {
+async function authHeaders(): Promise<HeadersInit> {
+  let token: string
+  try { token = await getToken('linkedin') } catch {
+    token = cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)
+  }
   return {
-    Authorization: `Bearer ${cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)}`,
+    Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
     'X-Restli-Protocol-Version': '2.0.0',
   }
@@ -18,7 +23,7 @@ function authHeaders(): HeadersInit {
 async function liFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
-    headers: { ...authHeaders(), ...(options.headers ?? {}) },
+    headers: { ...(await authHeaders()), ...(options.headers ?? {}) },
   })
 
   if (res.status === 429) {
@@ -31,6 +36,10 @@ async function liFetch(path: string, options: RequestInit = {}): Promise<Respons
 
 export async function publishPost(content: string): Promise<{ postId: string }> {
   return withRetry(async () => {
+    let token: string
+    try { token = await getToken('linkedin') } catch {
+      token = cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)
+    }
     const author = cleanEnvValue(process.env.LINKEDIN_AUTHOR_URN)
     if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
     const body = {

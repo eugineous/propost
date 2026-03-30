@@ -153,6 +153,20 @@ export const workflowDefinitions = pgTable('workflow_definitions', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).default(sql`NOW()`),
 })
 
+// ── Platform Connections (OAuth tokens) ──────────────────────
+export const platformConnections = pgTable('platform_connections', {
+  id:               uuid('id').primaryKey().defaultRandom(),
+  platform:         text('platform').notNull().unique(), // 'instagram'|'facebook'|'linkedin'|'x'|'tiktok'
+  accessToken:      text('access_token').notNull(),
+  refreshToken:     text('refresh_token'),
+  expiresAt:        timestamp('expires_at', { withTimezone: true }),
+  scope:            text('scope'),
+  platformUserId:   text('platform_user_id'),
+  platformUsername: text('platform_username'),
+  createdAt:        timestamp('created_at', { withTimezone: true }).default(sql`NOW()`),
+  updatedAt:        timestamp('updated_at', { withTimezone: true }).default(sql`NOW()`),
+})
+
 // ── Workflow Executions ───────────────────────────────────────
 export const workflowExecutions = pgTable('workflow_executions', {
   id: uuid('id').primaryKey().defaultRandom(),
