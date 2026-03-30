@@ -186,6 +186,7 @@ const NAV_LINKS = [
   { href: '/', label: '🏢 Empire' },
   { href: '/monitor', label: '🖥️ Monitor' },
   { href: '/analytics', label: '📊 Analytics' },
+  { href: '/workflows', label: '⚙️ Workflows' },
   { href: '/inbox', label: '📥 Inbox' },
   { href: '/content', label: '📝 Content' },
   { href: '/brand-deals', label: '💰 Brand Deals' },
