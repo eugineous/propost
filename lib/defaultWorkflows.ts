@@ -595,37 +595,32 @@ export const DEFAULT_WORKFLOWS: Record<string, WorkflowDefinition> = {
 // ── Seed Function ─────────────────────────────────────────────
 
 export async function seedDefaultWorkflows(): Promise<{ seeded: number; skipped: number }> {
-  let seeded = 0
-  let skipped = 0
+  // Check which agents already have active executions (one query)
+  const existing = await db
+    .select({ agentName: workflowExecutions.agentName })
+    .from(workflowExecutions)
+    .where(eq(workflowExecutions.status, 'active'))
 
-  for (const agentName of ALL_AGENT_NAMES) {
-    // Check if already has an active execution (idempotent)
-    const [existing] = await db
-      .select({ id: workflowExecutions.id })
-      .from(workflowExecutions)
-      .where(
-        and(
-          eq(workflowExecutions.agentName, agentName),
-          eq(workflowExecutions.status, 'active')
-        )
-      )
-      .limit(1)
+  const seededSet = new Set(existing.map((r) => r.agentName))
 
-    if (existing) {
-      skipped++
-      continue
+  const toSeed = ALL_AGENT_NAMES.filter((name) => {
+    if (seededSet.has(name)) return false
+    if (!DEFAULT_WORKFLOWS[name]) {
+      console.warn(`[seedWorkflows] No default workflow for agent: ${name}`)
+      return false
     }
+    return true
+  })
 
-    const definition = DEFAULT_WORKFLOWS[agentName]
-    if (!definition) {
-      console.warn(`[seedWorkflows] No default workflow for agent: ${agentName}`)
-      skipped++
-      continue
-    }
+  const skipped = ALL_AGENT_NAMES.length - toSeed.length
 
-    try {
+  if (toSeed.length === 0) return { seeded: 0, skipped }
+
+  // Seed all agents in parallel to stay within serverless timeout
+  const results = await Promise.allSettled(
+    toSeed.map(async (agentName) => {
+      const definition = DEFAULT_WORKFLOWS[agentName]!
       await assignWorkflow(agentName, definition)
-
       await db.insert(agentActions).values({
         agentName,
         company: AGENT_CORP_LOOKUP[agentName] ?? 'intelcore',
@@ -633,13 +628,10 @@ export async function seedDefaultWorkflows(): Promise<{ seeded: number; skipped:
         details: { summary: `Default workflow "${definition.name}" assigned to ${agentName}` },
         outcome: 'success',
       })
+    })
+  )
 
-      seeded++
-    } catch (err) {
-      console.error(`[seedWorkflows] Failed to seed ${agentName}:`, err)
-      skipped++
-    }
-  }
+  const seeded = results.filter((r) => r.status === 'fulfilled').length
 
-  return { seeded, skipped }
+  return { seeded, skipped: skipped + (toSeed.length - seeded) }
 }
