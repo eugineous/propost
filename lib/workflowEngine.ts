@@ -5,10 +5,11 @@
 
 import { db } from '@/lib/db'
 import { workflowDefinitions, workflowExecutions, agentActions } from '@/lib/schema'
-import { eq, and, lte, sql } from 'drizzle-orm'
-import { dispatchToAgent, AGENT_CORP_LOOKUP } from '@/lib/agentDispatch'
+import { eq, and, lte } from 'drizzle-orm'
+import { AGENT_CORP_LOOKUP } from '@/lib/agentDispatch'
 import { setAgentActive, setAgentIdle, setAgentError, isAgentPaused, ALL_AGENT_NAMES } from '@/lib/agentState'
 import { setAgentWorkflowState } from '@/lib/workflowState'
+import { executeAction } from '@/lib/workflowActions'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -287,10 +288,7 @@ export async function executeStep(agentName: string): Promise<StepResult> {
   await setAgentActive(agentName, `workflow:${step.action}`)
 
   try {
-    const result = await dispatchToAgent(corp, agentName, {
-      task: step.action,
-      ...(step.params ?? {}),
-    })
+    const result = await executeAction(step.action, step.params ?? {}, agentName, corp)
 
     await setAgentIdle(agentName, `workflow:${step.action}:done`)
 
@@ -304,11 +302,11 @@ export async function executeStep(agentName: string): Promise<StepResult> {
         step: step.name,
         workflowId: execution.workflowId,
       },
-      outcome: 'success',
+      outcome: result.ok ? 'success' : 'error',
       durationMs: Date.now() - start,
     })
 
-    return { ok: true, preview: result.preview }
+    return { ok: result.ok, preview: result.preview }
   } catch (err) {
     const errorMsg = String(err)
     const newErrorCount = (execution.errorCount ?? 0) + 1
