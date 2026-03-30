@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
       details: { summary: `Auto-seeded ${seeded} agent workflows — empire is live` },
       outcome: 'success',
     })
+    // Return early — agents will execute on the next cron tick (5 min)
+    return NextResponse.json({ ok: true, agentsRun: 0, stepsExecuted: 0, bootstrapped: seeded })
   }
 
   const igEnabled = Boolean(process.env.INSTAGRAM_ACCESS_TOKEN && process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID)
