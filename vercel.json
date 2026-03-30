@@ -1,15 +1,15 @@
 {
   "crons": [
-    { "path": "/api/cron/autopilot", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/x-post", "schedule": "0 * * * *" },
+    { "path": "/api/cron/autopilot", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/x-post", "schedule": "0 9 * * *" },
     { "path": "/api/cron/ig-post", "schedule": "0 10 * * *" },
-    { "path": "/api/cron/li-post", "schedule": "0 9,13,17 * * 1-5" },
+    { "path": "/api/cron/li-post", "schedule": "0 13 * * 1-5" },
     { "path": "/api/cron/ig-backlog", "schedule": "0 8 * * *" },
     { "path": "/api/cron/briefing", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/scout", "schedule": "0 */2 * * *" },
-    { "path": "/api/cron/sentry", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/scout", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/sentry", "schedule": "0 12 * * *" },
     { "path": "/api/cron/memory", "schedule": "0 23 * * 0" },
-    { "path": "/api/cron/metrics-sync", "schedule": "0 */6 * * *" }
+    { "path": "/api/cron/metrics-sync", "schedule": "0 0 * * *" }
   ],
   "functions": {
     "app/api/**": { "maxDuration": 60 }
