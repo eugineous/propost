@@ -62,7 +62,7 @@ OUTPUT FORMAT (JSON):
       description: 'Search for AI news or trending topics to write about',
       parameters: {
         type: 'object',
-        properties: { query: { type: 'string' } },
+        properties: { query: { type: 'string', description: 'Search query' } },
         required: ['query'],
       },
     },
