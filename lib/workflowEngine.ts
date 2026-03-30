@@ -360,7 +360,7 @@ export async function executeStep(agentName: string): Promise<StepResult> {
 
 // ── Get Due Executions ────────────────────────────────────────
 
-export async function getDueExecutions(): Promise<WorkflowExecutionState[]> {
+export async function getDueExecutions(limit = 10): Promise<WorkflowExecutionState[]> {
   const rows = await db
     .select()
     .from(workflowExecutions)
@@ -370,6 +370,8 @@ export async function getDueExecutions(): Promise<WorkflowExecutionState[]> {
         lte(workflowExecutions.nextRunAt, new Date())
       )
     )
+    .limit(limit)
+    .orderBy(workflowExecutions.nextRunAt)
 
   return rows.map((r) => ({
     workflowId: r.workflowId ?? '',
@@ -387,28 +389,24 @@ export async function getDueExecutions(): Promise<WorkflowExecutionState[]> {
 // ── Schedule All Due Agents ───────────────────────────────────
 
 export async function scheduleAllDueAgents(): Promise<{ agentsRun: number; stepsExecuted: number }> {
-  const due = await getDueExecutions()
+  // Max 10 agents per cron tick — keeps execution within Vercel's timeout
+  const due = await getDueExecutions(10)
   if (due.length === 0) return { agentsRun: 0, stepsExecuted: 0 }
 
-  // Process max 10 concurrently to avoid Gemini rate limits
-  const CONCURRENCY = 10
-  let stepsExecuted = 0
+  // Run all 10 concurrently
+  const results = await Promise.allSettled(
+    due.map(async (execution) => {
+      const result = await executeStep(execution.agentName)
+      if (result.ok && result.preview !== 'skipped (paused)') {
+        await advanceCursor(execution.agentName, result)
+      }
+      return result
+    })
+  )
 
-  for (let i = 0; i < due.length; i += CONCURRENCY) {
-    const batch = due.slice(i, i + CONCURRENCY)
-    const results = await Promise.allSettled(
-      batch.map(async (execution) => {
-        const result = await executeStep(execution.agentName)
-        if (result.ok && result.preview !== 'skipped (paused)') {
-          await advanceCursor(execution.agentName, result)
-        }
-        return result
-      })
-    )
-    stepsExecuted += results.filter(
-      (r) => r.status === 'fulfilled' && r.value.ok && r.value.preview !== 'skipped (paused)'
-    ).length
-  }
+  const stepsExecuted = results.filter(
+    (r) => r.status === 'fulfilled' && r.value.ok && r.value.preview !== 'skipped (paused)'
+  ).length
 
   return { agentsRun: due.length, stepsExecuted }
 }
