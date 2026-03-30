@@ -54,13 +54,51 @@ async function runAutopilot(env) {
 
 async function runXPost(env) {
   const base = env.PROPOST_URL || 'https://propost.vercel.app'
+  const browserPosterUrl = env.X_BROWSER_POSTER_URL || 'https://propost-x-poster.euginemicah.workers.dev'
+
   try {
-    const res = await fetch(`${base}/api/cron/x-post`, {
+    // Step 1: Ask Vercel to generate content via BLAZE (no posting)
+    const genRes = await fetch(`${base}/api/cron/x-generate`, {
       headers: { 'x-cron-secret': env.CRON_SECRET, 'User-Agent': 'ProPost-CF-Worker/2.0' },
     })
-    const data = await res.json()
-    console.log(`[x-post] ${res.status} — tweetId:${data.tweetId ?? 'none'}`)
-    return { ok: res.ok, ...data }
+
+    if (!genRes.ok) {
+      console.warn(`[x-post] content generation failed: ${genRes.status}`)
+      return { ok: false, error: `Content generation failed: ${genRes.status}` }
+    }
+
+    const { content } = await genRes.json()
+    if (!content) {
+      console.warn('[x-post] no content generated')
+      return { ok: false, error: 'No content generated' }
+    }
+
+    // Step 2: Post via browser automation (no API credits needed)
+    const postRes = await fetch(`${browserPosterUrl}/post`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': env.INTERNAL_SECRET,
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    const data = await postRes.json()
+    console.log(`[x-post] browser poster ${postRes.status} — ok:${data.ok}`)
+
+    // Step 3: Log the result back to Vercel DB
+    if (data.ok) {
+      await fetch(`${base}/api/cron/x-log`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cron-secret': env.CRON_SECRET,
+        },
+        body: JSON.stringify({ content, method: 'browser_automation' }),
+      }).catch(() => {}) // non-critical
+    }
+
+    return { ok: data.ok, method: 'browser_automation', ...data }
   } catch (err) {
     console.error('[x-post] failed:', err)
     return { ok: false, error: String(err) }

@@ -1,0 +1,16 @@
+name = "propost-x-poster"
+main = "index.js"
+compatibility_date = "2025-09-15"
+compatibility_flags = ["nodejs_compat"]
+
+[browser]
+binding = "BROWSER"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "placeholder"
+
+# Secrets to set via wrangler:
+# wrangler secret put INTERNAL_SECRET --name propost-x-poster
+# wrangler secret put X_USERNAME --name propost-x-poster
+# wrangler secret put X_PASSWORD --name propost-x-poster
