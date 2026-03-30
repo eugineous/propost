@@ -1,14 +1,13 @@
 /**
  * ProPost Empire — Cloudflare Worker
  * Fires every 5 min (autopilot) + every hour (X post)
- * Bypasses Vercel Pro cron requirement entirely
+ * Uses CF_API_TOKEN for KV operations
  */
 
 export default {
   async scheduled(event, env, ctx) {
     const minute = new Date().getMinutes()
     ctx.waitUntil(runAutopilot(env))
-    // Also fire X post every hour (when minute is 0-4)
     if (minute < 5) {
       ctx.waitUntil(runXPost(env))
     }
@@ -24,11 +23,16 @@ export default {
       const result = await runXPost(env)
       return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } })
     }
+    if (url.pathname === '/trigger-all') {
+      const [autopilot, xpost] = await Promise.all([runAutopilot(env), runXPost(env)])
+      return new Response(JSON.stringify({ autopilot, xpost }), { headers: { 'Content-Type': 'application/json' } })
+    }
     return new Response(JSON.stringify({
       ok: true,
-      worker: 'ProPost Empire Autopilot',
-      endpoints: ['/trigger-autopilot', '/trigger-x-post'],
+      worker: 'ProPost Empire Autopilot v2',
+      endpoints: ['/trigger-autopilot', '/trigger-x-post', '/trigger-all'],
       schedule: 'autopilot every 5min, x-post every hour',
+      cfApiToken: env.CF_API_TOKEN ? 'configured' : 'missing',
     }), { headers: { 'Content-Type': 'application/json' } })
   },
 }
