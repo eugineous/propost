@@ -170,8 +170,8 @@ function MetricsPanel({ stats }: { stats: LiveStats | null }) {
       <div style={{ marginTop: 12 }}>
         <div style={{ fontSize: 7, color: '#555', marginBottom: 6 }}>QUICK OVERRIDES</div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {[{ label: '⏸ PAUSE ALL', color: '#F59E0B', path: 'pause-all' }, { label: '▶ RESUME ALL', color: '#22C55E', path: 'resume-all' }].map(b => (
-            <button key={b.path} onClick={() => fetch(`/api/override/${b.path}`, { method: 'POST' })}
+          {[{ label: '⏸ PAUSE ALL', color: '#F59E0B', cmd: 'PAUSE' }, { label: '▶ RESUME ALL', color: '#22C55E', cmd: 'RESUME' }].map(b => (
+            <button key={b.cmd} onClick={() => fetch('/api/override', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: b.cmd, scope: 'all' }) })}
               style={{ flex: 1, background: `${b.color}15`, border: `1px solid ${b.color}44`, color: b.color, borderRadius: 3, padding: '4px 0', fontSize: 7, cursor: 'pointer', fontFamily: 'monospace' }}>
               {b.label}
             </button>
