@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     ]
     const topic = body.topic ?? topics[Math.floor(Math.random() * topics.length)]
 
-    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-1.5-flash' })
     const result = await model.generateContent(`You are writing a casual watercooler conversation between AI agents at ProPost Empire, a Kenyan social media management company.
 
 PARTICIPANTS:

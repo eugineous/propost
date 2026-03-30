@@ -19,7 +19,7 @@ import { cleanEnvValue } from '@/lib/env'
 function geminiKey() { return cleanEnvValue(process.env.GEMINI_API_KEY) }
 function nvidiaKey() { return cleanEnvValue(process.env.NVIDIA_API_KEY) }
 function nvidiaBase() { return cleanEnvValue(process.env.NVIDIA_BASE_URL) || 'https://integrate.api.nvidia.com/v1' }
-function geminiModel() { return cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' }
+function geminiModel() { return cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-1.5-flash' }
 
 // NVIDIA models — pick based on task
 const NVIDIA_MODELS = {

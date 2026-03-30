@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const publishedPosts = recentPosts.filter(p => p.status === 'published').length
     const draftPosts = recentPosts.filter(p => p.status === 'draft').length
 
-    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-1.5-flash' })
     const result = await model.generateContent(`You are SCRIBE, the intelligence analyst for ProPost Empire — a Kenyan social media management company run by Eugine Micah.
 
 Generate a morning briefing for 6AM EAT. Be concise, actionable, and energetic.

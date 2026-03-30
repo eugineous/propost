@@ -107,7 +107,7 @@ async function generateReply(messageText: string, senderUsername: string, receiv
   if (!apiKey) return { replyText: '', isBrandDeal: false, tier: 4, language: 'english' }
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-1.5-flash' })
 
   const hoursOld = Math.floor((Date.now() - receivedAt.getTime()) / (1000 * 60 * 60))
   const prompt = `${INSTAGRAM_KNOWLEDGE_BASE}

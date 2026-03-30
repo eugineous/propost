@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     }
 
     const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
-    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-1.5-flash' })
 
     const prompt = `You are a content repurposing expert for Eugine Micah, a Kenyan media entrepreneur and digital creator based in Nairobi.
 
