@@ -12,9 +12,13 @@ export async function GET(req: NextRequest) {
 
   try {
     const blazeResult = await blazeRun(
-      'Generate a tweet for Eugine Micah (@eugineroylandz). Nairobi media entrepreneur, PPP TV founder. ' +
-      'Topics: Kenyan media, entrepreneurship, Gen Z culture, behind-the-scenes. ' +
-      'Tone: confident, authentic, Nairobi voice. Max 240 chars. Return just the tweet text, no JSON wrapper.'
+      'Generate a tweet for Eugine Micah (@eugineroylandz). ' +
+      'First search for the latest AI news or trending topics in Kenya right now. ' +
+      'Apply the 5-step pre-post framework from your knowledge base. ' +
+      'Choose the right format: hot take (under 200 chars), thread opener, or trending reaction. ' +
+      'The Kenyan angle is MANDATORY for AI news. ' +
+      'No forbidden words. Sounds like a real Nairobi entrepreneur, not a bot. ' +
+      'Return JSON with tweets array where tweets[0].text is the main tweet under 280 chars.'
     )
 
     let content = (blazeResult.data?.response as string ?? '').trim()

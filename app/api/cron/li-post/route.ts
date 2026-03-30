@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateCronSecret } from '@/lib/cronAuth'
 import { hawkReview } from '@/lib/hawk'
-import { run as novaRun } from '@/agents/linkedelite/nova'
+import { run as oratorRun } from '@/agents/linkedelite/orator'
 import { publishPost } from '@/lib/platforms/linkedin'
 import { incrementRateLimit } from '@/lib/agentState'
 import { db } from '@/lib/db'
@@ -59,27 +59,36 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, mode: 'scheduled', postId, scheduledPostId: due.id })
     }
 
-    // Run NOVA to generate content
-    const novaResult = await novaRun('Generate a LinkedIn post for Eugine Micah')
+    // Run ORATOR to generate content with full knowledge base
+    const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+    const oratorResult = await oratorRun(
+      `Generate a LinkedIn post for Eugine Micah. Today is ${day}. ` +
+      `Use the weekly pillar rotation: Monday=Youth Empowerment, Tuesday=Media/Urban News, ` +
+      `Wednesday=Elite Conversations, Thursday=Entrepreneurship, Friday=Trending Topics, ` +
+      `Saturday=Personal Story, Sunday=AI Weekly Roundup. ` +
+      `Search for the latest AI news first, then write a post that sounds authentically like Eugine. ` +
+      `Apply the 5-step pre-post framework. Return JSON with a "content" field.`
+    )
 
     let content = ''
     try {
-      const raw = novaResult.data.response as string
+      const raw = oratorResult.data.response as string
       const jsonMatch = raw.match(/\{[\s\S]*\}/)
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as { content?: string }
+        const parsed = JSON.parse(jsonMatch[0]) as { content?: string; hookLine?: string }
         content = parsed.content ?? ''
       }
+      if (!content) content = raw.trim()
     } catch {
-      content = novaResult.data.response as string
+      content = oratorResult.data.response as string
     }
 
     if (!content) {
-      return NextResponse.json({ ok: false, reason: 'NOVA produced no content' })
+      return NextResponse.json({ ok: false, reason: 'ORATOR produced no content' })
     }
 
     // HAWK review
-    const decision = await hawkReview(content, 'linkedin', 'nova')
+    const decision = await hawkReview(content, 'linkedin', 'orator')
 
     if (!decision.approved) {
       return NextResponse.json({ ok: false, reason: 'HAWK blocked', blockedReasons: decision.blockedReasons })
@@ -88,23 +97,21 @@ export async function GET(req: NextRequest) {
     // Publish
     const { postId } = await publishPost(content)
 
-    // Increment rate limit counter
-    await incrementRateLimit('nova', 'postsToday')
+    await incrementRateLimit('orator', 'postsToday')
 
-    // Save to posts table
     await db.insert(posts).values({
       platform: 'linkedin',
       content,
       status: 'published',
       platformId: postId,
       publishedAt: new Date(),
-      agentName: 'nova',
+      agentName: 'orator',
       hawkApproved: true,
       hawkRiskScore: decision.riskScore,
     })
 
     await db.insert(agentActions).values({
-      agentName: 'nova',
+      agentName: 'orator',
       company: 'linkedelite',
       actionType: 'post_published',
       details: {
