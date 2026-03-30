@@ -274,17 +274,36 @@ export default function EmpireOffice() {
   const fetchStates = async () => {
     try {
       const res = await fetch('/api/monitor/live')
-      const data = await res.json() as { ok: boolean; agents?: Record<string, { status?: string; currentStep?: string; progress?: number; lastRunAt?: string }> }
+      const data = await res.json() as {
+        ok: boolean
+        agents?: Array<{ agentName: string; company: string; status?: string; lastAction?: string; lastOutput?: string; lastActionTime?: string; actionCount?: number }>
+        | Record<string, { status?: string; currentStep?: string; progress?: number; lastRunAt?: string }>
+      }
       if (!data.ok || !data.agents) return
       const states: Record<string, AgentState> = {}
-      for (const [name, s] of Object.entries(data.agents)) {
-        states[name] = {
-          name,
-          corp: AGENT_CORP[name] ?? 'intelcore',
-          status: (s?.status as AgentState['status']) ?? 'idle',
-          currentStep: s?.currentStep,
-          progress: s?.progress,
-          lastRunAt: s?.lastRunAt,
+
+      // Handle both array format (live API) and map format (workflow KV)
+      if (Array.isArray(data.agents)) {
+        for (const a of data.agents) {
+          states[a.agentName] = {
+            name: a.agentName,
+            corp: AGENT_CORP[a.agentName] ?? 'intelcore',
+            status: (a.status as AgentState['status']) ?? 'idle',
+            currentStep: a.lastAction,
+            progress: undefined,
+            lastRunAt: a.lastActionTime,
+          }
+        }
+      } else {
+        for (const [name, s] of Object.entries(data.agents)) {
+          states[name] = {
+            name,
+            corp: AGENT_CORP[name] ?? 'intelcore',
+            status: (s?.status as AgentState['status']) ?? 'idle',
+            currentStep: s?.currentStep,
+            progress: s?.progress,
+            lastRunAt: s?.lastRunAt,
+          }
         }
       }
       setAgentStates(states)
