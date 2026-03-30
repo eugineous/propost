@@ -85,9 +85,9 @@ OUTPUT FORMAT (JSON):
       parameters: {
         type: 'object',
         properties: {
-          actionType: { type: 'string' },
-          details: { type: 'string' },
-          outcome: { type: 'string' },
+          actionType: { type: 'string', description: 'Type of action' },
+          details: { type: 'string', description: 'JSON details' },
+          outcome: { type: 'string', description: 'success|blocked|error' },
         },
         required: ['actionType', 'outcome'],
       },
