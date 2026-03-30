@@ -616,22 +616,26 @@ export async function seedDefaultWorkflows(): Promise<{ seeded: number; skipped:
 
   if (toSeed.length === 0) return { seeded: 0, skipped }
 
-  // Seed all agents in parallel to stay within serverless timeout
-  const results = await Promise.allSettled(
-    toSeed.map(async (agentName) => {
-      const definition = DEFAULT_WORKFLOWS[agentName]!
-      await assignWorkflow(agentName, definition)
-      await db.insert(agentActions).values({
-        agentName,
-        company: AGENT_CORP_LOOKUP[agentName] ?? 'intelcore',
-        actionType: 'workflow_seeded',
-        details: { summary: `Default workflow "${definition.name}" assigned to ${agentName}` },
-        outcome: 'success',
+  // Seed in parallel batches of 15 to avoid overwhelming Neon connection pool
+  let seeded = 0
+  const BATCH = 15
+  for (let i = 0; i < toSeed.length; i += BATCH) {
+    const batch = toSeed.slice(i, i + BATCH)
+    const results = await Promise.allSettled(
+      batch.map(async (agentName) => {
+        const definition = DEFAULT_WORKFLOWS[agentName]!
+        await assignWorkflow(agentName, definition)
+        await db.insert(agentActions).values({
+          agentName,
+          company: AGENT_CORP_LOOKUP[agentName] ?? 'intelcore',
+          actionType: 'workflow_seeded',
+          details: { summary: `Default workflow "${definition.name}" assigned to ${agentName}` },
+          outcome: 'success',
+        })
       })
-    })
-  )
-
-  const seeded = results.filter((r) => r.status === 'fulfilled').length
+    )
+    seeded += results.filter((r) => r.status === 'fulfilled').length
+  }
 
   return { seeded, skipped: skipped + (toSeed.length - seeded) }
 }
