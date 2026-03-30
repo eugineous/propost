@@ -94,7 +94,28 @@ export async function GET(req: NextRequest) {
     }
 
     // 3) Publish
-    const { tweetId, url } = await postTweet(content)
+    let tweetId: string, url: string
+    try {
+      const result = await postTweet(content)
+      tweetId = result.tweetId
+      url = result.url
+    } catch (postErr) {
+      const msg = String(postErr)
+      if (msg.includes('X_CREDITS_DEPLETED')) {
+        // Save as draft — will be published when credits reset
+        await db.insert(posts).values({
+          platform: 'x', content, status: 'draft', agentName: 'blaze',
+          hawkApproved: true, hawkRiskScore: decision.riskScore,
+        })
+        await db.insert(agentActions).values({
+          agentName: 'blaze', company: 'xforce', actionType: 'post_queued_credits',
+          details: { platform: 'x', reason: 'X free tier credits depleted — post saved as draft', contentPreview: content.slice(0, 160) },
+          outcome: 'success',
+        })
+        return NextResponse.json({ ok: true, mode: 'draft_queued', reason: 'X credits depleted — post saved as draft, will publish when credits reset' })
+      }
+      throw postErr
+    }
 
     // Increment rate limit counter
     await incrementRateLimit('blaze', 'postsToday')

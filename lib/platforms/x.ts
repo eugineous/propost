@@ -139,6 +139,10 @@ export async function postTweet(
 
     if (!res.ok) {
       const err = await res.text()
+      // 402 = CreditsDepleted (free tier monthly limit hit)
+      if (res.status === 402) {
+        throw new Error(`X_CREDITS_DEPLETED: ${err.slice(0, 200)}`)
+      }
       throw new Error(`postTweet failed: ${res.status} ${err}`)
     }
 
