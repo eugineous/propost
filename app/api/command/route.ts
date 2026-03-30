@@ -74,9 +74,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  if (!body.text?.trim()) {
-    return NextResponse.json({ error: 'text is required' }, { status: 400 })
+  // Accept both `text` and `command` fields for compatibility
+  const commandText = body.text ?? (body as unknown as { command?: string }).command ?? ''
+  if (!commandText.trim()) {
+    return NextResponse.json({ error: 'text or command is required' }, { status: 400 })
   }
+  body.text = commandText
 
   const commandId = randomUUID()
   let targetCorp: Corp = 'intelcore'

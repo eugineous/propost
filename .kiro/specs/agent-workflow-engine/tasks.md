@@ -225,7 +225,7 @@ Implement a structured workflow engine for all 47 ProPost Empire agents: DB sche
     - `Office3D` self-polls `/api/monitor/live` so no additional props needed
     - _Requirements: 8.2_
 
-- [x] 12. Final Checkpoint — Ensure all tests pass
+- [ ] 12. Final Checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
