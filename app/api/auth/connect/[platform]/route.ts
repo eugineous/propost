@@ -18,8 +18,9 @@ function buildAuthUrl(platform: Platform, state: string, codeChallenge?: string)
   const redirectUri = `${BASE_URL}/api/auth/callback/${platform}`
 
   if (platform === 'instagram' || platform === 'facebook') {
+    const appId = process.env.META_APP_ID ?? process.env.FACEBOOK_APP_ID ?? ''
     const params = new URLSearchParams({
-      client_id:     process.env.META_APP_ID ?? '',
+      client_id:     appId,
       redirect_uri:  redirectUri,
       scope:         'instagram_basic,instagram_content_publish,pages_read_engagement,pages_manage_posts,pages_show_list',
       response_type: 'code',

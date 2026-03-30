@@ -37,7 +37,7 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
     - **Validates: Requirements 2.1, 2.3**
 
 - [-] 4. Implement OAuth callback route app/api/auth/callback/[platform]/route.ts
-  - [-] 4.1 Create `app/api/auth/callback/[platform]/route.ts`
+  - [x] 4.1 Create `app/api/auth/callback/[platform]/route.ts`
     - Validate NextAuth session
     - Read and validate `state` cookie — reject with 400 + redirect on mismatch
     - Exchange `code` for tokens (include `code_verifier` for X/TikTok)
@@ -56,7 +56,7 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
   - Ensure all tests pass, ask the user if questions arise.
 
 - [-] 6. Implement connections API routes
-  - [ ] 6.1 Create `app/api/connections/route.ts` — GET all connections
+  - [x] 6.1 Create `app/api/connections/route.ts` — GET all connections
     - Validate session
     - Query `platform_connections` for all 5 platforms
     - Return sanitized status array (no raw tokens)
@@ -67,7 +67,7 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
   - [ ]* 6.3 Write property test for connections API — Property 9: No raw tokens in API response
     - **Property 9: No raw tokens in API response**
     - **Validates: Requirements 7.4**
-  - [ ] 6.4 Create `app/api/connections/[platform]/route.ts` — DELETE connection
+  - [x] 6.4 Create `app/api/connections/[platform]/route.ts` — DELETE connection
     - Validate session
     - Delete row from `platform_connections` for given platform
     - Return `{ ok: true }` (idempotent)
@@ -77,7 +77,7 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
     - **Validates: Requirements 7.5**
 
 - [-] 7. Implement token refresh cron app/api/cron/refresh-tokens/route.ts
-  - [ ] 7.1 Create `app/api/cron/refresh-tokens/route.ts`
+  - [x] 7.1 Create `app/api/cron/refresh-tokens/route.ts`
     - Protect with `CRON_SECRET` header check
     - Query connections where `expires_at` is within 48 hours
     - Call `refreshToken(platform)` for each; log errors without deleting existing tokens
@@ -89,17 +89,17 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
     - **Validates: Requirements 5.2, 5.3**
 
 - [-] 8. Update platform wrappers to use getToken() with env var fallback
-  - [ ] 8.1 Update `lib/platforms/instagram.ts` — use `getToken('instagram')` with `process.env.INSTAGRAM_ACCESS_TOKEN` fallback
+  - [x] 8.1 Update `lib/platforms/instagram.ts` — use `getToken('instagram')` with `process.env.INSTAGRAM_ACCESS_TOKEN` fallback
     - _Requirements: 6.1, 6.4_
   - [ ] 8.2 Update `lib/platforms/facebook.ts` — use `getToken('facebook')` with `process.env.FACEBOOK_ACCESS_TOKEN` fallback
     - _Requirements: 6.1, 6.7_
-  - [ ] 8.3 Update `lib/platforms/linkedin.ts` — use `getToken('linkedin')` with `process.env.LINKEDIN_ACCESS_TOKEN` fallback
+  - [x] 8.3 Update `lib/platforms/linkedin.ts` — use `getToken('linkedin')` with `process.env.LINKEDIN_ACCESS_TOKEN` fallback
     - _Requirements: 6.1, 6.6_
   - [ ] 8.4 Update `lib/platforms/x.ts` — use `getToken('x')` with OAuth 1.0a env var fallback for user-context calls
     - _Requirements: 6.1, 6.5_
 
 - [-] 9. Build settings connections UI app/settings/connections/page.tsx
-  - [ ] 9.1 Create `app/settings/connections/page.tsx`
+  - [x] 9.1 Create `app/settings/connections/page.tsx`
     - Fetch `GET /api/connections` on load
     - Render platform cards with Connect/Disconnect buttons
     - Show connected username, days until expiry, and warning indicator when ≤ 7 days
@@ -114,7 +114,7 @@ Add one-click OAuth connect buttons for Instagram, Facebook, LinkedIn, X, and Ti
     - **Property 2: Expiry warning threshold**
     - **Validates: Requirements 1.6**
 
-- [ ] 10. Add link to connections page from existing settings page
+- [x] 10. Add link to connections page from existing settings page
   - Update `app/settings/page.tsx` Platform Connections section to link to `/settings/connections`
   - _Requirements: 1.1_
 
