@@ -6,7 +6,10 @@ import { agentActions } from '@/lib/schema'
 import { scheduleAllDueAgents } from '@/lib/workflowEngine'
 
 export async function GET(req: NextRequest) {
-  if (!validateCronSecret(req)) {
+  // Allow cron secret OR internal secret (for browser-triggered runs)
+  const internalSecret = req.headers.get('x-internal-secret')
+  const isInternal = internalSecret && internalSecret === process.env.INTERNAL_SECRET
+  if (!isInternal && !validateCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

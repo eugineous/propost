@@ -1,20 +1,11 @@
-name = "propost-webhook-receiver"
-main = "src/index.ts"
+name = "propost-autopilot"
+main = "autopilot-cron.js"
 compatibility_date = "2024-01-01"
 
-[[kv_namespaces]]
-binding = "WEBHOOK_KV"
-id = "79c37dd6fe22433d923770cbd4d97f9a"
-
-[vars]
-VERCEL_URL = "https://propost-roylandz-media.vercel.app"
-# Set these in the Cloudflare dashboard under Workers & Pages → propost-webhook-receiver → Settings → Variables:
-# CRON_SECRET = "propost-cron-371667210-secret"
-# INTERNAL_SECRET = "propost-internal-649185875-secret"
-# WEBHOOK_VERIFY_TOKEN = (any string you choose, set same value in Meta webhook config)
-# INSTAGRAM_APP_SECRET = (from Meta Developer portal)
-# FACEBOOK_APP_SECRET  = (from Meta Developer portal)
-# X_WEBHOOK_SECRET     = (from X Developer portal)
-
+# Cron triggers — every 5 minutes
 [triggers]
 crons = ["*/5 * * * *"]
+
+# Environment variables (set via: wrangler secret put CRON_SECRET)
+# PROPOST_URL = "https://propost.vercel.app"
+# CRON_SECRET = "propost-cron-371667210-secret"

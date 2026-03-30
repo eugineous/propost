@@ -58,55 +58,45 @@ export default function DashboardClient() {
   const [notifCount, setNotifCount] = useState(0)
   const [pendingApprovals, setPendingApprovals] = useState(0)
 
-  // Poll agent states from live monitor every 15s
+  // Poll agent states + live stats every 15s (single request)
   useEffect(() => {
-    const fetchAgentStates = async () => {
+    const fetchLive = async () => {
       try {
         const res = await fetch('/api/monitor/live')
-        const json = await res.json() as { ok: boolean; agents?: Array<{ agentName: string; status: 'active' | 'idle' }> }
-        if (json.ok && json.agents) {
+        const json = await res.json() as {
+          ok: boolean
+          agentList?: Array<{ agentName: string; status: 'active' | 'idle' }>
+          totalActionsToday?: number
+          postsToday?: number
+          trendsToday?: number
+        }
+        if (!json.ok) return
+        if (json.agentList) {
           const states: Record<string, CharacterState> = {}
-          for (const agent of json.agents) {
+          for (const agent of json.agentList) {
             states[agent.agentName.toUpperCase()] = agent.status === 'active' ? 'active' : 'idle'
           }
           setAgentStates(states)
         }
-      } catch {
-        // ignore
-      }
+        setLiveStats({
+          totalActionsToday: json.totalActionsToday ?? 0,
+          postsToday: json.postsToday ?? 0,
+          trendsToday: json.trendsToday ?? 0,
+        })
+      } catch { /* ignore */ }
     }
-    fetchAgentStates()
-    const interval = setInterval(fetchAgentStates, 15000)
+    fetchLive()
+    const interval = setInterval(fetchLive, 15000)
     return () => clearInterval(interval)
   }, [])
 
-  // Fire autonomous startup on mount
+  // Fire autonomous startup on mount — also triggers workflow engine
   useEffect(() => {
     fetch('/api/agents/startup', { method: 'POST' })
       .then(() => setEmpireStatus('online'))
       .catch(() => setEmpireStatus('online'))
-  }, [])
-
-  // Poll live stats every 60s
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch('/api/monitor/live')
-        const json = await res.json() as { ok: boolean; totalActionsToday?: number; postsToday?: number; trendsToday?: number }
-        if (json.ok) {
-          setLiveStats({
-            totalActionsToday: json.totalActionsToday ?? 0,
-            postsToday: json.postsToday ?? 0,
-            trendsToday: json.trendsToday ?? 0,
-          })
-        }
-      } catch {
-        // ignore
-      }
-    }
-    fetchStats()
-    const interval = setInterval(fetchStats, 60000)
-    return () => clearInterval(interval)
+    // Trigger autopilot immediately so agents start working on page load
+    fetch('/api/cron/autopilot', { headers: { 'x-internal-secret': 'propost-internal-649185875-secret' } }).catch(() => {})
   }, [])
 
   // Poll pending messages for notification count
@@ -276,13 +266,13 @@ export default function DashboardClient() {
                 </button>
               </div>
             )}
-            <HQOffice agentStates={agentStates} onAgentClick={handleAgentClick} />
-            {/* 3D Office toggle — click to switch */}
-            <div style={{ marginTop: 8, textAlign: 'right' }}>
-              <Suspense fallback={<div style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>Loading 3D Office...</div>}>
-                <Office3D />
-              </Suspense>
-            </div>
+            <Suspense fallback={
+              <div style={{ height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666', fontSize: 10, fontFamily: 'monospace', background: '#0A0A14' }}>
+                ⚡ Loading 3D Office...
+              </div>
+            }>
+              <Office3D />
+            </Suspense>
           </div>
 
           <div className="flex-1 overflow-hidden" style={{ background: '#0D0D1A' }}>
