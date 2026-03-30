@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { agentActions, messages } from '@/lib/schema'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { cleanEnvValue } from '@/lib/env'
 
 const BASE_URL = 'https://graph.facebook.com/v25.0'
 
@@ -42,11 +43,11 @@ type BacklogDM = {
 }
 
 function token() {
-  return process.env.INSTAGRAM_ACCESS_TOKEN ?? ''
+  return cleanEnvValue(process.env.INSTAGRAM_ACCESS_TOKEN)
 }
 
 function igId() {
-  return process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID ?? ''
+  return cleanEnvValue(process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID)
 }
 
 async function igGetJson<T>(path: string): Promise<T> {
@@ -102,11 +103,11 @@ async function replyToInstagramDM(conversationId: string, replyText: string): Pr
 }
 
 async function generateReply(messageText: string, senderUsername: string, receivedAt: Date): Promise<{ replyText: string; isBrandDeal: boolean; tier: number; language: string }> {
-  const apiKey = process.env.GEMINI_API_KEY
+  const apiKey = cleanEnvValue(process.env.GEMINI_API_KEY)
   if (!apiKey) return { replyText: '', isBrandDeal: false, tier: 4, language: 'english' }
 
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
 
   const hoursOld = Math.floor((Date.now() - receivedAt.getTime()) / (1000 * 60 * 60))
   const prompt = `${INSTAGRAM_KNOWLEDGE_BASE}

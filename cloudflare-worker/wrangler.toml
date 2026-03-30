@@ -4,12 +4,17 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "WEBHOOK_KV"
-id = "placeholder-replace-with-real-id"
+id = "79c37dd6fe22433d923770cbd4d97f9a"
 
 [vars]
 VERCEL_URL = "https://propost.vercel.app"
-CRON_SECRET = "set-in-cloudflare-dashboard"
-INTERNAL_SECRET = "set-in-cloudflare-dashboard"
+# Set these in the Cloudflare dashboard under Workers & Pages → propost-webhook-receiver → Settings → Variables:
+# CRON_SECRET = "propost-cron-371667210-secret"
+# INTERNAL_SECRET = "propost-internal-649185875-secret"
+# WEBHOOK_VERIFY_TOKEN = (any string you choose, set same value in Meta webhook config)
+# INSTAGRAM_APP_SECRET = (from Meta Developer portal)
+# FACEBOOK_APP_SECRET  = (from Meta Developer portal)
+# X_WEBHOOK_SECRET     = (from X Developer portal)
 
 [triggers]
 crons = ["*/5 * * * *"]

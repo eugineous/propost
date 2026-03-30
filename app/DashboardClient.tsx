@@ -48,12 +48,34 @@ function NairobiClock() {
 }
 
 export default function DashboardClient() {
-  const [agentStates] = useState<Record<string, CharacterState>>({})
+  const [agentStates, setAgentStates] = useState<Record<string, CharacterState>>({})
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [empireStatus, setEmpireStatus] = useState<'starting' | 'online'>('starting')
   const [liveStats, setLiveStats] = useState<{ totalActionsToday: number; postsToday: number; trendsToday: number } | null>(null)
   const [notifCount, setNotifCount] = useState(0)
   const [pendingApprovals, setPendingApprovals] = useState(0)
+
+  // Poll agent states from live monitor every 15s
+  useEffect(() => {
+    const fetchAgentStates = async () => {
+      try {
+        const res = await fetch('/api/monitor/live')
+        const json = await res.json() as { ok: boolean; agents?: Array<{ agentName: string; status: 'active' | 'idle' }> }
+        if (json.ok && json.agents) {
+          const states: Record<string, CharacterState> = {}
+          for (const agent of json.agents) {
+            states[agent.agentName.toUpperCase()] = agent.status === 'active' ? 'active' : 'idle'
+          }
+          setAgentStates(states)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchAgentStates()
+    const interval = setInterval(fetchAgentStates, 15000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Fire autonomous startup on mount
   useEffect(() => {

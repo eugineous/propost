@@ -3,37 +3,76 @@
 // ============================================================
 
 import { withRetry } from './retry'
+import { cleanEnvValue } from '@/lib/env'
+import crypto from 'crypto'
 
 const BASE_URL = 'https://api.twitter.com/2'
 
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID!
-const CF_KV_AGENT_STATE_ID = process.env.CF_KV_AGENT_STATE_ID!
-const CF_API_TOKEN = process.env.CF_API_TOKEN!
+// Helper: read X_* env vars with TWITTER_* fallback for backwards compat
+function xEnv(xKey: string, twitterKey: string): string {
+  return cleanEnvValue(process.env[xKey] || process.env[twitterKey])
+}
 
-async function bearerHeaders(): Promise<HeadersInit> {
+function bearerHeaders(): HeadersInit {
   return {
-    Authorization: `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
+    Authorization: `Bearer ${xEnv('X_BEARER_TOKEN', 'TWITTER_BEARER_TOKEN')}`,
     'Content-Type': 'application/json',
   }
 }
 
-async function oauthHeaders(method: string, url: string, body?: string): Promise<HeadersInit> {
-  // OAuth 1.0a signing for write operations
-  const timestamp = Math.floor(Date.now() / 1000).toString()
-  const nonce = Math.random().toString(36).substring(2)
+// Proper OAuth 1.0a signing (HMAC-SHA1) using Node.js crypto
+function oauthHeaders(method: string, fullUrl: string): HeadersInit {
+  const consumerKey    = xEnv('X_API_KEY', 'TWITTER_API_KEY')
+  const consumerSecret = xEnv('X_API_SECRET', 'TWITTER_API_SECRET')
+  const accessToken    = xEnv('X_ACCESS_TOKEN', 'TWITTER_ACCESS_TOKEN')
+  const tokenSecret    = xEnv('X_ACCESS_TOKEN_SECRET', 'TWITTER_ACCESS_SECRET')
 
-  const params: Record<string, string> = {
-    oauth_consumer_key: process.env.TWITTER_API_KEY!,
-    oauth_nonce: nonce,
-    oauth_signature_method: 'HMAC-SHA256',
-    oauth_timestamp: timestamp,
-    oauth_token: process.env.TWITTER_ACCESS_TOKEN!,
-    oauth_version: '1.0',
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+  const nonce = crypto.randomBytes(16).toString('hex')
+
+  // Strip query string for base URL; collect query params separately
+  const urlObj = new URL(fullUrl)
+  const baseUrl = `${urlObj.protocol}//${urlObj.host}${urlObj.pathname}`
+
+  const queryParams: Record<string, string> = {}
+  urlObj.searchParams.forEach((v, k) => { queryParams[k] = v })
+
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key:     consumerKey,
+    oauth_nonce:            nonce,
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp:        timestamp,
+    oauth_token:            accessToken,
+    oauth_version:          '1.0',
   }
+
+  // Combine all params, percent-encode keys & values, sort, join
+  const allParams = { ...queryParams, ...oauthParams }
+  const paramString = Object.entries(allParams)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&')
+
+  // Signature base string
+  const baseString = [
+    method.toUpperCase(),
+    encodeURIComponent(baseUrl),
+    encodeURIComponent(paramString),
+  ].join('&')
+
+  // Signing key
+  const signingKey = `${encodeURIComponent(consumerSecret)}&${encodeURIComponent(tokenSecret)}`
+
+  // HMAC-SHA1 → base64
+  const signature = crypto.createHmac('sha1', signingKey).update(baseString).digest('base64')
 
   const authHeader =
     'OAuth ' +
-    Object.entries(params)
+    [
+      ...Object.entries(oauthParams),
+      ['oauth_signature', signature],
+    ]
+      .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${encodeURIComponent(k)}="${encodeURIComponent(v)}"`)
       .join(', ')
 
@@ -45,16 +84,19 @@ async function oauthHeaders(method: string, url: string, body?: string): Promise
 
 async function updateRateLimitKV(): Promise<void> {
   try {
-    const key = 'x:rate_limit:429'
+    const cfAccountId    = cleanEnvValue(process.env.CF_ACCOUNT_ID)
+    const cfKvAgentStateId = cleanEnvValue(process.env.CF_KV_AGENT_STATE_ID)
+    const cfApiToken     = cleanEnvValue(process.env.CF_API_TOKEN)
+
+    const key   = 'x:rate_limit:429'
     const value = JSON.stringify({ hitAt: new Date().toISOString(), backoffUntil: Date.now() + 3600000 })
-    const kvUrl = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_AGENT_STATE_ID}/values/${encodeURIComponent(key)}`
+    const kvUrl = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/storage/kv/namespaces/${cfKvAgentStateId}/values/${encodeURIComponent(key)}`
     await fetch(kvUrl, {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${cfApiToken}`, 'Content-Type': 'application/json' },
       body: value,
     })
   } catch {
-    // Non-critical — log and continue
     console.warn('[x] Failed to update rate limit KV')
   }
 }
@@ -64,12 +106,15 @@ async function xFetch(
   options: RequestInit = {},
   useBearer = true
 ): Promise<Response> {
-  const headers = useBearer ? await bearerHeaders() : await oauthHeaders(options.method ?? 'GET', `${BASE_URL}${path}`)
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  const fullUrl = `${BASE_URL}${path}`
+  const headers = useBearer
+    ? bearerHeaders()
+    : oauthHeaders(options.method ?? 'GET', fullUrl)
+
+  const res = await fetch(fullUrl, { ...options, headers })
 
   if (res.status === 429) {
     await updateRateLimitKV()
-    // Back off 1 hour
     await new Promise((r) => setTimeout(r, 3600000))
     throw new Error('X API rate limit hit (429) — backed off 1 hour')
   }
@@ -111,10 +156,13 @@ export async function replyToTweet(
   replyToId: string
 ): Promise<{ tweetId: string }> {
   return withRetry(async () => {
-    const res = await xFetch('/tweets', {
+    const fullUrl = `${BASE_URL}/tweets`
+    const body = JSON.stringify({ text: content, reply: { in_reply_to_tweet_id: replyToId } })
+    const res = await fetch(fullUrl, {
       method: 'POST',
-      body: JSON.stringify({ text: content, reply: { in_reply_to_tweet_id: replyToId } }),
-    }, false)
+      headers: oauthHeaders('POST', fullUrl),
+      body,
+    })
 
     if (!res.ok) {
       const err = await res.text()
@@ -126,15 +174,32 @@ export async function replyToTweet(
   })
 }
 
+export async function getMentions(): Promise<Array<{ id: string; text: string }>> {
+  return withRetry(async () => {
+    const res = await xFetch(
+      '/tweets/search/recent?query=@euginemicah&max_results=10&tweet.fields=text',
+      {},
+      true
+    )
+
+    if (!res.ok) {
+      console.warn(`[x] getMentions failed: ${res.status}`)
+      return []
+    }
+
+    const json = await res.json() as { data?: Array<{ id: string; text: string }> }
+    return json.data ?? []
+  })
+}
+
 export async function getTrending(
-  region = 'KE'
+  _region = 'KE'
 ): Promise<Array<{ text: string; volume: number }>> {
   return withRetry(async () => {
-    // X API v2 trending via search/recent with woeid mapping
+    // X API v2 trending endpoint (Kenya woeid: 23424863)
     const res = await xFetch(`/trends/by/woeid/23424863`, {}, true)
 
     if (!res.ok) {
-      // Fallback: return empty array on non-critical failure
       console.warn(`[x] getTrending failed: ${res.status}`)
       return []
     }
@@ -152,7 +217,6 @@ export async function getNotifications(): Promise<
   Array<{ id: string; type: string; text: string }>
 > {
   return withRetry(async () => {
-    // Fetch mentions timeline as notifications proxy
     const res = await xFetch(
       '/tweets/search/recent?query=@euginemicah&max_results=10&tweet.fields=text',
       {},
@@ -165,11 +229,7 @@ export async function getNotifications(): Promise<
     }
 
     const json = await res.json() as { data?: Array<{ id: string; text: string }> }
-    return (json.data ?? []).map((t) => ({
-      id: t.id,
-      type: 'mention',
-      text: t.text,
-    }))
+    return (json.data ?? []).map((t) => ({ id: t.id, type: 'mention', text: t.text }))
   })
 }
 
@@ -179,24 +239,22 @@ export async function getMetrics(): Promise<{
   engagementRate: number
 }> {
   return withRetry(async () => {
-    const res = await xFetch(
-      '/users/me?user.fields=public_metrics',
-      {},
-      true
-    )
+    // Fetch authenticated user's public metrics
+    const res = await xFetch('/users/me?user.fields=public_metrics', {}, true)
 
     if (!res.ok) {
-      console.warn(`[x] getMetrics failed: ${res.status}`)
-      return { followers: 0, impressions: 0, engagementRate: 0 }
+      throw new Error(`X getMetrics failed: ${res.status} ${await res.text()}`)
     }
 
     const json = await res.json() as {
       data: { public_metrics: { followers_count: number; tweet_count: number } }
     }
-    const metrics = json.data.public_metrics
+
+    const followers   = json.data.public_metrics.followers_count ?? 0
+    const tweetCount  = json.data.public_metrics.tweet_count ?? 0
     return {
-      followers: metrics.followers_count,
-      impressions: 0, // Requires elevated access
+      followers,
+      impressions: tweetCount * 100, // crude estimate — real impressions require elevated access
       engagementRate: 0,
     }
   })

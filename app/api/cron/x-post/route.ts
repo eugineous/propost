@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateCronSecret } from '@/lib/cronAuth'
 import { hawkReview } from '@/lib/hawk'
 import { run as blazeRun } from '@/agents/xforce/blaze'
-import { postTweet } from '@/lib/platforms/x'
+import { getMentions, postTweet, replyToTweet } from '@/lib/platforms/x'
 import { incrementRateLimit } from '@/lib/agentState'
 import { db } from '@/lib/db'
 import { posts, agentActions } from '@/lib/schema'
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // 1) Publish any scheduled post that's due
+    // 1) Publish any scheduled post that is due
     const now = new Date()
     const [due] = await db
       .select()
@@ -58,10 +58,13 @@ export async function GET(req: NextRequest) {
         outcome: 'success',
       })
 
+      // Also handle any pending mentions after publishing
+      await handleMentions()
+
       return NextResponse.json({ ok: true, mode: 'scheduled', tweetId, url, postId: due.id })
     }
 
-    // Run BLAZE to generate content
+    // 2) Run BLAZE to generate content
     const blazeResult = await blazeRun('Generate a tweet for Eugine Micah based on current trends and content pillars')
 
     let content = ''
@@ -77,6 +80,8 @@ export async function GET(req: NextRequest) {
     }
 
     if (!content) {
+      // No content generated — still handle mentions before returning
+      await handleMentions()
       return NextResponse.json({ ok: false, reason: 'BLAZE produced no content' })
     }
 
@@ -84,16 +89,17 @@ export async function GET(req: NextRequest) {
     const decision = await hawkReview(content, 'x', 'blaze')
 
     if (!decision.approved) {
+      await handleMentions()
       return NextResponse.json({ ok: false, reason: 'HAWK blocked', blockedReasons: decision.blockedReasons })
     }
 
-    // Publish
+    // 3) Publish
     const { tweetId, url } = await postTweet(content)
 
     // Increment rate limit counter
     await incrementRateLimit('blaze', 'postsToday')
 
-    // Save to posts table
+    // 4) Save to posts table
     await db.insert(posts).values({
       platform: 'x',
       content,
@@ -105,6 +111,7 @@ export async function GET(req: NextRequest) {
       hawkRiskScore: decision.riskScore,
     })
 
+    // 5) Log to agentActions
     await db.insert(agentActions).values({
       agentName: 'blaze',
       company: 'xforce',
@@ -118,10 +125,81 @@ export async function GET(req: NextRequest) {
       outcome: 'success',
     })
 
-    return NextResponse.json({ ok: true, tweetId, url })
+    // 6) Handle any pending mentions
+    const mentionsSummary = await handleMentions()
+
+    return NextResponse.json({ ok: true, tweetId, url, mentions: mentionsSummary })
   } catch (err) {
     console.error('[cron/x-post]', err)
     return NextResponse.json({ error: 'X post failed' }, { status: 500 })
   }
 }
 
+/**
+ * Fetch recent mentions and reply to each one using BLAZE-generated text.
+ * Non-critical: failures are caught and logged rather than propagated.
+ */
+async function handleMentions(): Promise<{ replied: number; errors: number }> {
+  let replied = 0
+  let errors = 0
+
+  try {
+    const mentions = await getMentions()
+
+    for (const mention of mentions) {
+      try {
+        // Ask BLAZE to craft a reply
+        const blazeResult = await blazeRun(
+          `Write a short, friendly reply to this mention on X: "${mention.text}". Keep it under 200 characters.`
+        )
+
+        let replyText = ''
+        try {
+          const raw = blazeResult.data.response as string
+          const jsonMatch = raw.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]) as { reply?: string; text?: string }
+            replyText = parsed.reply ?? parsed.text ?? ''
+          }
+          if (!replyText) replyText = raw.trim()
+        } catch {
+          replyText = blazeResult.data.response as string
+        }
+
+        if (!replyText) continue
+
+        // HAWK review before replying
+        const decision = await hawkReview(replyText, 'x', 'blaze')
+        if (!decision.approved) {
+          errors++
+          continue
+        }
+
+        const { tweetId } = await replyToTweet(replyText, mention.id)
+
+        await db.insert(agentActions).values({
+          agentName: 'blaze',
+          company: 'xforce',
+          actionType: 'mention_replied',
+          details: {
+            platform: 'x',
+            originalTweetId: mention.id,
+            replyTweetId: tweetId,
+            contentPreview: replyText.slice(0, 160),
+          },
+          outcome: 'success',
+        })
+
+        replied++
+      } catch (mentionErr) {
+        console.error('[cron/x-post] mention reply error', mentionErr)
+        errors++
+      }
+    }
+  } catch (err) {
+    console.error('[cron/x-post] getMentions error', err)
+    errors++
+  }
+
+  return { replied, errors }
+}

@@ -8,8 +8,7 @@ import { db } from '@/lib/db'
 import { agentActions } from '@/lib/schema'
 import { desc, eq } from 'drizzle-orm'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { cleanEnvValue } from '@/lib/env'
 
 const CHAT_AGENTS = [
   { name: 'blaze', corp: 'xforce', personality: 'energetic, creative, always hyped about content' },
@@ -54,6 +53,7 @@ export async function GET() {
 // POST: generate a new agent conversation exchange
 export async function POST(req: NextRequest) {
   try {
+    const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
     const body = await req.json().catch(() => ({})) as { topic?: string; agents?: string[] }
 
     // Pick 2-3 random agents for the conversation
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     ]
     const topic = body.topic ?? topics[Math.floor(Math.random() * topics.length)]
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
     const result = await model.generateContent(`You are writing a casual watercooler conversation between AI agents at ProPost Empire, a Kenyan social media management company.
 
 PARTICIPANTS:

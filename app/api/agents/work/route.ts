@@ -8,11 +8,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getDMs, replyToDM } from '@/lib/platforms/instagram'
 import { dispatchToAgent, AGENT_CORP_LOOKUP } from '@/lib/agentDispatch'
 import { setAgentActive, setAgentIdle, setAgentError } from '@/lib/agentState'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { cleanEnvValue } from '@/lib/env'
 
 async function geminiGenerate(prompt: string): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
+  const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
   const result = await model.generateContent(prompt)
   return result.response.text()
 }

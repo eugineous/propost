@@ -11,6 +11,7 @@ export interface Env {
   LINKEDIN_CLIENT_SECRET: string
   INTERNAL_SECRET: string
   CRON_SECRET: string
+  WEBHOOK_VERIFY_TOKEN: string
 }
 
 type Platform = 'x' | 'instagram' | 'facebook' | 'linkedin'
@@ -78,6 +79,30 @@ export default {
 
     if (!platform) {
       return new Response('Not Found', { status: 404 })
+    }
+
+    // ----------------------------------------------------------------
+    // Meta webhook verification (GET challenge-response handshake).
+    // Meta sends a GET request to verify the endpoint before it will
+    // deliver any events. We must echo back hub.challenge when the
+    // verify token matches.
+    // ----------------------------------------------------------------
+    if (
+      request.method === 'GET' &&
+      (platform === 'instagram' || platform === 'facebook')
+    ) {
+      const mode = url.searchParams.get('hub.mode')
+      const verifyToken = url.searchParams.get('hub.verify_token')
+      const challenge = url.searchParams.get('hub.challenge')
+
+      if (mode === 'subscribe' && verifyToken === env.WEBHOOK_VERIFY_TOKEN && challenge) {
+        return new Response(challenge, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
+
+      return new Response('Forbidden', { status: 403 })
     }
 
     if (request.method !== 'POST') {

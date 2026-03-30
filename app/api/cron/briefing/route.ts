@@ -8,19 +8,19 @@ import { db } from '@/lib/db'
 import { agentActions, trends, posts } from '@/lib/schema'
 import { desc, gte, sql } from 'drizzle-orm'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { validateCronSecret } from '@/lib/cronAuth'
+import { cleanEnvValue } from '@/lib/env'
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && process.env.NODE_ENV === 'production') {
+  // Verify cron secret via x-cron-secret header
+  if (!validateCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const start = Date.now()
 
   try {
+    const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
     // Gather yesterday's stats
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const publishedPosts = recentPosts.filter(p => p.status === 'published').length
     const draftPosts = recentPosts.filter(p => p.status === 'draft').length
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
     const result = await model.generateContent(`You are SCRIBE, the intelligence analyst for ProPost Empire — a Kenyan social media management company run by Eugine Micah.
 
 Generate a morning briefing for 6AM EAT. Be concise, actionable, and energetic.

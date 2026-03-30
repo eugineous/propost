@@ -132,13 +132,86 @@ function propBorder(kind: OfficePropKind): string {
   }
 }
 
+// ─── CSS keyframes injected once ─────────────────────────────────────────────
+
+const KEYFRAMES = `
+@keyframes pp-type {
+  0%,100% { transform: translateY(0px); }
+  50%      { transform: translateY(-2px); }
+}
+@keyframes pp-walk-l {
+  0%,100% { transform: translateY(0px) scaleY(1); }
+  50%      { transform: translateY(-3px) scaleY(0.92); }
+}
+@keyframes pp-walk-r {
+  0%,100% { transform: translateY(0px) scaleY(1); }
+  50%      { transform: translateY(-3px) scaleY(0.92); }
+}
+@keyframes pp-blink {
+  0%,90%,100% { opacity: 1; }
+  95%          { opacity: 0; }
+}
+@keyframes pp-dot1 { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+@keyframes pp-dot2 { 0%,80%,100%{opacity:.2} 60%{opacity:1} }
+@keyframes pp-dot3 { 0%,80%,100%{opacity:.2} 80%{opacity:1} }
+@keyframes pp-pulse { 0%,100%{box-shadow:0 0 4px currentColor} 50%{box-shadow:0 0 12px currentColor} }
+`
+
+let _injected = false
+function injectKeyframes() {
+  if (_injected || typeof document === 'undefined') return
+  _injected = true
+  const s = document.createElement('style')
+  s.textContent = KEYFRAMES
+  document.head.appendChild(s)
+}
+
+// ─── Typing dots indicator ────────────────────────────────────────────────────
+
+function TypingDots({ color }: { color: string }) {
+  const dot = { width: 3, height: 3, borderRadius: '50%', background: color, display: 'inline-block', margin: '0 1px' }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, height: 8 }}>
+      <div style={{ ...dot, animation: 'pp-dot1 1.2s infinite' }} />
+      <div style={{ ...dot, animation: 'pp-dot2 1.2s infinite' }} />
+      <div style={{ ...dot, animation: 'pp-dot3 1.2s infinite' }} />
+    </div>
+  )
+}
+
 // ─── Pixel person ─────────────────────────────────────────────────────────────
 
-function PixelPerson({ agent, state, facingLeft }: { agent: string; state?: CharacterState; facingLeft: boolean }) {
+function PixelPerson({
+  agent, state, facingLeft, mood,
+}: {
+  agent: string
+  state?: CharacterState
+  facingLeft: boolean
+  mood: 'working' | 'walking' | 'talking'
+}) {
   const o = OUTFITS[agent] ?? { shirt: '#94A3B8', skin: '#C68642', hair: '#111827' }
-  const isActive = state === 'active'
+  const isActive  = state === 'active'
   const isBlocked = state === 'blocked'
-  const isPaused = state === 'paused'
+  const isPaused  = state === 'paused'
+  const isTyping  = isActive && mood === 'working'
+  const isWalking = mood === 'walking'
+
+  // inject keyframes on first render
+  useEffect(() => { injectKeyframes() }, [])
+
+  const legL: React.CSSProperties = isWalking
+    ? { position: 'absolute', left: 4, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1, animation: 'pp-walk-l 0.5s infinite' }
+    : { position: 'absolute', left: 4, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1 }
+  const legR: React.CSSProperties = isWalking
+    ? { position: 'absolute', left: 11, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1, animation: 'pp-walk-r 0.5s infinite 0.25s' }
+    : { position: 'absolute', left: 11, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1 }
+
+  const armL: React.CSSProperties = isTyping
+    ? { position: 'absolute', left: 0, top: 14, width: 3, height: 6, background: o.shirt, borderRadius: 1, animation: 'pp-type 0.3s infinite' }
+    : { position: 'absolute', left: 0, top: 14, width: 3, height: 6, background: o.shirt, borderRadius: 1 }
+  const armR: React.CSSProperties = isTyping
+    ? { position: 'absolute', right: 0, top: 14, width: 3, height: 6, background: o.shirt, borderRadius: 1, animation: 'pp-type 0.3s infinite 0.15s' }
+    : { position: 'absolute', right: 0, top: 14, width: 3, height: 6, background: o.shirt, borderRadius: 1 }
 
   return (
     <div
@@ -149,23 +222,39 @@ function PixelPerson({ agent, state, facingLeft }: { agent: string; state?: Char
         imageRendering: 'pixelated',
         transform: facingLeft ? 'scaleX(-1)' : undefined,
         opacity: isPaused ? 0.5 : 1,
-        filter: isBlocked ? 'hue-rotate(0deg) saturate(0.4)' : undefined,
+        filter: isBlocked ? 'saturate(0.3)' : undefined,
       }}
     >
       {/* hair */}
       <div style={{ position: 'absolute', left: 3, top: 0, width: 14, height: 4, background: o.hair, borderRadius: 2 }} />
       {/* head */}
       <div style={{ position: 'absolute', left: 4, top: 3, width: 12, height: 9, background: o.skin, borderRadius: 2 }} />
+      {/* eyes — blink when idle */}
+      <div style={{
+        position: 'absolute', left: 6, top: 6, width: 2, height: 2, background: '#111',
+        borderRadius: 1, animation: isActive ? undefined : 'pp-blink 4s infinite',
+      }} />
+      <div style={{
+        position: 'absolute', left: 12, top: 6, width: 2, height: 2, background: '#111',
+        borderRadius: 1, animation: isActive ? undefined : 'pp-blink 4s infinite 0.1s',
+      }} />
       {/* body */}
       <div style={{ position: 'absolute', left: 3, top: 12, width: 14, height: 9, background: o.shirt, borderRadius: 2 }} />
+      {/* shirt highlight */}
+      <div style={{ position: 'absolute', left: 5, top: 13, width: 4, height: 2, background: 'rgba(255,255,255,0.18)', borderRadius: 1 }} />
+      {/* arms */}
+      <div style={armL} />
+      <div style={armR} />
       {/* legs */}
-      <div style={{ position: 'absolute', left: 4, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1 }} />
-      <div style={{ position: 'absolute', left: 11, top: 21, width: 5, height: 7, background: '#1E293B', borderRadius: 1 }} />
+      <div style={legL} />
+      <div style={legR} />
       {/* active glow */}
       {isActive && (
         <div style={{
           position: 'absolute', inset: -3, borderRadius: 4,
-          boxShadow: `0 0 8px ${o.shirt}88`,
+          boxShadow: `0 0 8px ${o.shirt}99`,
+          animation: 'pp-pulse 2s infinite',
+          color: o.shirt,
           pointerEvents: 'none',
         }} />
       )}
@@ -200,6 +289,13 @@ function AgentSprite({
   onClick?: () => void
 }) {
   const dot = statusColor(state)
+  const o   = OUTFITS[agent] ?? { shirt: '#94A3B8', skin: '#C68642', hair: '#111827' }
+  const isActive  = state === 'active'
+  const isTyping  = isActive && pose.mood === 'working'
+  const isTalking = pose.mood === 'talking' && pose.lineTtlMs > 0
+
+  // stack order: typing dots → speech → nameplate → sprite
+  const bubbleBottom = isTalking ? 52 : isTyping ? 38 : 26
 
   return (
     <button
@@ -216,22 +312,43 @@ function AgentSprite({
         zIndex: 10,
       }}
     >
-      {/* Speech bubble */}
-      {pose.lineTtlMs > 0 && (
+      {/* Typing dots — shown when agent is actively working at desk */}
+      {isTyping && !isTalking && (
         <div style={{
           position: 'absolute',
           bottom: '100%',
           left: '50%',
           transform: 'translateX(-50%)',
-          marginBottom: 4,
+          marginBottom: 26,
+          padding: '2px 6px',
+          borderRadius: 6,
+          background: 'rgba(10,10,20,0.88)',
+          border: `1px solid ${o.shirt}44`,
+          pointerEvents: 'none',
+        }}>
+          <TypingDots color={o.shirt} />
+        </div>
+      )}
+
+      {/* Speech bubble */}
+      {isTalking && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginBottom: 26,
           padding: '3px 7px',
           borderRadius: 8,
           background: 'rgba(10,10,20,0.92)',
-          border: '1px solid rgba(0,240,255,0.25)',
+          border: '1px solid rgba(0,240,255,0.30)',
           color: '#E2E8F0',
           fontFamily: 'monospace',
           fontSize: 9,
           whiteSpace: 'nowrap',
+          maxWidth: 120,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
           boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
           pointerEvents: 'none',
         }}>
@@ -245,7 +362,7 @@ function AgentSprite({
         bottom: '100%',
         left: '50%',
         transform: 'translateX(-50%)',
-        marginBottom: pose.lineTtlMs > 0 ? 26 : 4,
+        marginBottom: bubbleBottom > 26 ? bubbleBottom : 4,
         display: 'flex',
         alignItems: 'center',
         gap: 4,
@@ -265,7 +382,7 @@ function AgentSprite({
         </span>
       </div>
 
-      <PixelPerson agent={agent} state={state} facingLeft={pose.facingLeft} />
+      <PixelPerson agent={agent} state={state} facingLeft={pose.facingLeft} mood={pose.mood} />
     </button>
   )
 }
@@ -416,17 +533,25 @@ export default function HQOffice({
         }
 
         // Occasionally pick a new target
-        if (Math.random() < 0.008) {
+        // Active agents are busy at their desk — they walk much less
+        const isAgentActive = agentStates[agent] === 'active'
+        const walkChance = isAgentActive ? 0.002 : 0.008
+        if (p.mood !== 'talking' && Math.random() < walkChance) {
           const home = agentHomeRoom(agent)
           // CEOs occasionally walk to command for briefings
           const isCeo = ['ZARA', 'NOVA', 'AURORA', 'CHIEF', 'ROOT'].includes(agent)
-          const goCommand = isCeo && Math.random() < 0.2
+          const goCommand = isCeo && Math.random() < 0.15
           const newRoom: OfficeRoomId = goCommand ? 'command' : home
 
           p.txPct = 15 + Math.random() * 70
           p.tyPct = 25 + Math.random() * 50
           p.room = newRoom
           p.mood = 'walking'
+        }
+
+        // Active agents snap back to 'working' (typing) faster once they arrive
+        if (isAgentActive && p.mood === 'walking' && Math.hypot(p.txPct - p.xPct, p.tyPct - p.yPct) < 0.5) {
+          p.mood = 'working'
         }
 
         // Move toward target

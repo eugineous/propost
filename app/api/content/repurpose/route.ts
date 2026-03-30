@@ -6,8 +6,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { hawkReview } from '@/lib/hawk'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { cleanEnvValue } from '@/lib/env'
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +17,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'content is required' }, { status: 400 })
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
+    const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
 
     const prompt = `You are a content repurposing expert for Eugine Micah, a Kenyan media entrepreneur and digital creator based in Nairobi.
 

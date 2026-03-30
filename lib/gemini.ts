@@ -1,5 +1,5 @@
 // ============================================================
-// ProPost Empire — Gemini 2.5 Pro API Wrapper
+// ProPost Empire — Gemini API Wrapper
 // ============================================================
 
 import {
@@ -11,8 +11,7 @@ import {
 } from '@google/generative-ai'
 import { AgentContext, AgentResult, GeminiFunctionDeclaration } from '@/lib/types'
 import { executeTool } from '@/lib/toolExecutor'
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+import { cleanEnvValue } from '@/lib/env'
 
 function toGeminiFunctionDeclaration(decl: GeminiFunctionDeclaration): FunctionDeclaration {
   return {
@@ -31,8 +30,13 @@ export async function runAgent(
   let tokensUsed = 0
 
   const attempt = async (): Promise<AgentResult> => {
+    // Create the client inside the function so it picks up the cleaned env value at runtime.
+    const apiKey = cleanEnvValue(process.env.GEMINI_API_KEY)
+    const modelName = cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash'
+    const genAI = new GoogleGenerativeAI(apiKey)
+
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-pro',
+      model: modelName,
       systemInstruction: context.systemPrompt,
     })
 
