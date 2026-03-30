@@ -1,7 +1,7 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 
@@ -24,6 +24,14 @@ const PLATFORM_CONFIG: Record<string, { name: string; icon: string; color: strin
 }
 
 export default function ConnectionsPage() {
+  return (
+    <Suspense fallback={<div style={{ background: '#0A0A14', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontFamily: 'monospace', fontSize: 10 }}>Loading...</div>}>
+      <ConnectionsContent />
+    </Suspense>
+  )
+}
+
+function ConnectionsContent() {
   const [connections, setConnections] = useState<ConnectionStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState<string | null>(null)
