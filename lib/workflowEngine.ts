@@ -389,8 +389,8 @@ export async function getDueExecutions(limit = 10): Promise<WorkflowExecutionSta
 // ── Schedule All Due Agents ───────────────────────────────────
 
 export async function scheduleAllDueAgents(): Promise<{ agentsRun: number; stepsExecuted: number }> {
-  // Max 10 agents per cron tick — keeps execution within Vercel's timeout
-  const due = await getDueExecutions(10)
+  // Max 5 agents per cron tick — keeps execution well within Vercel's 10s timeout
+  const due = await getDueExecutions(5)
   if (due.length === 0) return { agentsRun: 0, stepsExecuted: 0 }
 
   // Run all 10 concurrently
