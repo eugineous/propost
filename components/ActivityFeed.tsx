@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useActivityFeed } from '@/hooks/useActivityFeed'
 import type { ActivityEvent, Corp } from '@/lib/types'
 
@@ -33,13 +33,39 @@ function formatTime(ts: string): string {
 }
 
 export default function ActivityFeed() {
-  const { events, connectionStatus } = useActivityFeed()
+  const { events, connectionStatus, refresh } = useActivityFeed()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [running, setRunning] = useState(false)
+  const [runResult, setRunResult] = useState<string | null>(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [events])
 
   const handleRunAgents = async () => {
-    try { await fetch('/api/agents/work', { method: 'POST' }) } catch { /* silent */ }
+    if (running) return
+    setRunning(true)
+    setRunResult(null)
+    try {
+      const res = await fetch('/api/agents/work', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agents: ['CHAT', 'BLAZE', 'SCOUT', 'SCRIBE', 'MEMORY'] }),
+      })
+      const json = await res.json() as { ok: boolean; results?: Record<string, unknown>; errors?: Record<string, string> }
+      if (json.ok) {
+        const done = Object.keys(json.results ?? {}).join(', ') || 'none'
+        setRunResult(`✅ Ran: ${done}`)
+      } else {
+        const errs = Object.entries(json.errors ?? {}).map(([k, v]) => `${k}: ${String(v).slice(0, 60)}`).join(' | ')
+        setRunResult(`⚠️ ${errs || 'Some agents failed'}`)
+      }
+      // Refresh feed after run
+      setTimeout(() => refresh(), 2000)
+    } catch (err) {
+      setRunResult(`❌ ${String(err).slice(0, 80)}`)
+    } finally {
+      setRunning(false)
+      setTimeout(() => setRunResult(null), 8000)
+    }
   }
 
   return (
@@ -47,13 +73,29 @@ export default function ActivityFeed() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-pp-border flex-shrink-0">
         <h2 className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>ACTIVITY FEED</h2>
         <div className="flex items-center gap-2">
-          <button onClick={handleRunAgents} className="px-2 py-1 rounded text-black font-bold" style={{ fontSize: 8, background: '#22C55E' }}>▶ RUN AGENTS</button>
+          <button
+            onClick={handleRunAgents}
+            disabled={running}
+            className="px-2 py-1 rounded text-black font-bold disabled:opacity-50"
+            style={{ fontSize: 8, background: running ? '#16A34A' : '#22C55E', minWidth: 80 }}
+          >
+            {running ? '⚙️ RUNNING…' : '▶ RUN AGENTS'}
+          </button>
           <div className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full" style={{ background: connectionStatus === 'connected' ? '#22C55E' : connectionStatus === 'connecting' ? '#F59E0B' : '#EF4444' }} />
-            <span className="text-pp-muted" style={{ fontSize: 8 }}>{connectionStatus === 'connected' ? '🟢 LIVE' : connectionStatus === 'connecting' ? '🟡 CONNECTING' : '🔴 DISCONNECTED'}</span>
+            <span className="text-pp-muted" style={{ fontSize: 8 }}>
+              {connectionStatus === 'connected' ? '🟢 LIVE' : connectionStatus === 'connecting' ? '🟡 CONNECTING' : '🔴 DISCONNECTED'}
+            </span>
           </div>
         </div>
       </div>
+
+      {runResult && (
+        <div className="px-3 py-1 border-b border-pp-border flex-shrink-0" style={{ background: '#0D1117', fontSize: 8, color: '#94A3B8', fontFamily: 'monospace' }}>
+          {runResult}
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1">
         {events.length === 0 && (
           <div className="text-pp-muted text-center py-4" style={{ fontSize: 9 }}>Waiting for activity...</div>

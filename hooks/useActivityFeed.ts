@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActivityEvent } from '@/lib/types'
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
@@ -15,7 +15,7 @@ export function useActivityFeed() {
   const mountedRef = useRef(true)
   const seenRef = useRef<Set<string>>(new Set())
 
-  const poll = async () => {
+  const poll = useCallback(async () => {
     if (!mountedRef.current) return
     try {
       const res = await fetch('/api/monitor/live', { cache: 'no-store' })
@@ -43,6 +43,7 @@ export function useActivityFeed() {
         nextEvents.push({
           type: 'agent_action',
           agentName: a.agentName,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           company: a.company as any,
           summary: `${a.actionType}: ${a.outputPreview}`,
           data: { outcome: a.outcome },
@@ -60,7 +61,7 @@ export function useActivityFeed() {
       if (!mountedRef.current) return
       setConnectionStatus('disconnected')
     }
-  }
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
@@ -72,8 +73,7 @@ export function useActivityFeed() {
       mountedRef.current = false
       if (timerRef.current) clearInterval(timerRef.current)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [poll])
 
-  return { events, connectionStatus }
+  return { events, connectionStatus, refresh: poll }
 }

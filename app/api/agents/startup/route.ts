@@ -4,18 +4,32 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { agentActions } from '@/lib/schema'
+import { desc, gte, eq, and } from 'drizzle-orm'
 
-// Called when dashboard loads — triggers autonomous agent startup
 export async function POST() {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const cronSecret = process.env.CRON_SECRET ?? ''
-  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://propost.vercel.app'
+  const baseUrl = process.env.NEXTAUTH_URL ?? 'https://propost-roylandz-media.vercel.app'
 
-  // Fire all autonomous tasks in parallel (non-blocking)
+  // Only fire startup crons once every 30 minutes to avoid spamming the feed
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000)
+  const recentStartup = await db
+    .select({ id: agentActions.id })
+    .from(agentActions)
+    .where(and(
+      eq(agentActions.actionType, 'empire_startup'),
+      gte(agentActions.createdAt, thirtyMinutesAgo)
+    ))
+    .limit(1)
+
+  if (recentStartup.length > 0) {
+    return NextResponse.json({ ok: true, message: 'Empire already running.', skipped: true })
+  }
+
   const tasks = [
-    { path: '/api/cron/ig-backlog', name: 'CHAT: Instagram backlog clearance' },
+    { path: '/api/cron/ig-backlog', name: 'CHAT: Instagram backlog' },
     { path: '/api/cron/scout', name: 'SCOUT: Trend monitoring' },
     { path: '/api/cron/sentry', name: 'SENTRY: Crisis check' },
     { path: '/api/cron/metrics-sync', name: 'PIXEL: Metrics sync' },
@@ -23,7 +37,6 @@ export async function POST() {
     { path: '/api/cron/memory', name: 'MEMORY: Pattern analysis' },
   ]
 
-  // Log startup to activity feed
   await db.insert(agentActions).values({
     agentName: 'sovereign',
     company: 'intelcore',
@@ -36,16 +49,16 @@ export async function POST() {
     outcome: 'success',
   })
 
-  // Fire tasks without waiting (fire-and-forget)
+  // Fire all crons fire-and-forget
   tasks.forEach(task => {
     fetch(`${baseUrl}${task.path}`, {
       headers: { 'x-cron-secret': cronSecret },
-    }).catch(() => {}) // ignore errors — they run independently
+    }).catch(() => {})
   })
 
   return NextResponse.json({
     ok: true,
-    message: 'Empire activated. All 80 agents are now working autonomously across 9 corps.',
+    message: 'Empire activated. All 80 agents are now working autonomously.',
     agents: 80,
     tasks: tasks.map(t => t.name),
   })

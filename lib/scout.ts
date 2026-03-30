@@ -1,65 +1,81 @@
 // ============================================================
 // ProPost Empire — SCOUT scoutPoll
+// Uses Google Trends RSS (free, no API key needed)
 // ============================================================
 
-import { getTrending } from '@/lib/platforms/x'
 import { db } from '@/lib/db'
 import { trends, agentActions } from '@/lib/schema'
 
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID!
-const CF_KV_AGENT_STATE_ID = process.env.CF_KV_AGENT_STATE_ID!
-const CF_API_TOKEN = process.env.CF_API_TOKEN!
-const TRENDS_CACHE_KEY = 'trends:KE:x_trending'
-const TRENDS_TTL = 600 // 600 seconds
-
-async function kvPut(key: string, value: string, ttl: number): Promise<void> {
-  const url = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_AGENT_STATE_ID}/values/${encodeURIComponent(key)}?expiration_ttl=${ttl}`
-  await fetch(url, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${CF_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: value,
-  })
-}
-
 export async function scoutPoll(): Promise<void> {
-  const rawTrends = await getTrending('KE')
+  const start = Date.now()
+  const foundTrends: Array<{ text: string; volume: number }> = []
 
-  if (rawTrends.length === 0) {
-    console.warn('[scout] No trends returned from X API')
-    return
+  try {
+    // Google Trends daily RSS for Kenya — no API key required
+    const res = await fetch('https://trends.google.com/trends/trendingsearches/daily/rss?geo=KE', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ProPostBot/1.0)' },
+    })
+
+    if (!res.ok) {
+      throw new Error(`Google Trends RSS returned ${res.status}`)
+    }
+
+    const xml = await res.text()
+
+    // Parse <title><![CDATA[...]]></title> entries
+    const titleRegex = /<title><!\[CDATA\[([^\]]+)\]\]><\/title>/g
+    let match: RegExpExecArray | null
+    while ((match = titleRegex.exec(xml)) !== null) {
+      const text = match[1].trim()
+      if (text && text !== 'Daily Search Trends') {
+        foundTrends.push({ text, volume: 0 })
+      }
+    }
+
+    // Also try plain <title> tags as fallback
+    if (foundTrends.length === 0) {
+      const plainTitleRegex = /<title>([^<]{3,80})<\/title>/g
+      while ((match = plainTitleRegex.exec(xml)) !== null) {
+        const text = match[1].trim()
+        if (text && text !== 'Daily Search Trends' && !text.includes('<?')) {
+          foundTrends.push({ text, volume: 0 })
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[scout] Google Trends fetch failed:', err)
   }
 
-  // Cache in Cloudflare KV with 600s TTL
-  await kvPut(
-    TRENDS_CACHE_KEY,
-    JSON.stringify({ trends: rawTrends, fetchedAt: new Date().toISOString() }),
-    TRENDS_TTL
-  )
+  const topTrends = foundTrends.slice(0, 10)
 
-  // Store results in trends table and emit trend_detected events
-  for (const trend of rawTrends) {
-    await db.insert(trends).values({
-      trendText: trend.text,
-      volume: trend.volume,
-      region: 'KE',
-      source: 'x_trending',
-    }).onConflictDoNothing()
-
-    // Emit trend_detected SSE event via DB insert to agent_actions
-    await db.insert(agentActions).values({
-      agentName: 'scout',
-      company: 'xforce',
-      actionType: 'trend_detected',
-      details: {
+  // Store in trends table
+  for (const trend of topTrends) {
+    try {
+      await db.insert(trends).values({
         trendText: trend.text,
         volume: trend.volume,
         region: 'KE',
-        source: 'x_trending',
-      },
-      outcome: 'success',
-    })
+        source: 'google_trends',
+        relevanceScore: '0.7',
+      }).onConflictDoNothing()
+    } catch {
+      // ignore duplicate constraint errors
+    }
   }
+
+  // Always log to agent_actions (success or not)
+  await db.insert(agentActions).values({
+    agentName: 'scout',
+    company: 'xforce',
+    actionType: 'trends_fetched',
+    details: {
+      summary: `Found ${topTrends.length} trending topics in Kenya`,
+      trends: topTrends.slice(0, 5).map(t => t.text),
+      region: 'KE',
+      source: 'google_trends',
+      totalFound: topTrends.length,
+    },
+    outcome: topTrends.length > 0 ? 'success' : 'error',
+    durationMs: Date.now() - start,
+  })
 }

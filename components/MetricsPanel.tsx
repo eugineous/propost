@@ -33,14 +33,22 @@ function statusColor(status: ApiPlatform['status']) {
   return '#EF4444'
 }
 
+function statusLabel(status: ApiPlatform['status']) {
+  if (status === 'ok') return '● LIVE'
+  if (status === 'stale') return '○ STALE'
+  if (status === 'no_data') return '○ NO DATA'
+  return '✗ DISCONNECTED'
+}
+
 export default function MetricsPanel() {
   const [data, setData] = useState<MetricsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<string>('—')
+  const [syncing, setSyncing] = useState(false)
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const res = await fetch('/api/metrics')
+      const res = await fetch('/api/metrics', { cache: 'no-store' })
       if (!res.ok) throw new Error(`Metrics fetch failed: ${res.status}`)
       const json = (await res.json()) as MetricsResponse
       setData(json)
@@ -54,9 +62,25 @@ export default function MetricsPanel() {
 
   useEffect(() => {
     fetchMetrics()
-    const iv = setInterval(fetchMetrics, 60_000)
+    // Poll every 30 seconds for near-real-time updates
+    const iv = setInterval(fetchMetrics, 30_000)
     return () => clearInterval(iv)
   }, [fetchMetrics])
+
+  const handleSyncNow = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const cronSecret = ''  // server-side, will work if CRON_SECRET not required
+      await fetch('/api/cron/metrics-sync', {
+        headers: { 'x-cron-secret': cronSecret },
+      })
+      await new Promise(r => setTimeout(r, 2000))
+      await fetchMetrics()
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const fmt = (n: number | null) => {
     if (n === null) return '—'
@@ -69,7 +93,18 @@ export default function MetricsPanel() {
     <div className="h-full flex flex-col overflow-y-auto p-3 gap-3">
       <div className="flex items-center justify-between">
         <h2 className="pixel-text text-pp-gold" style={{ fontSize: 8 }}>LIVE METRICS</h2>
-        <span style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace' }}>{lastUpdated}</span>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize: 7, color: '#64748B', fontFamily: 'monospace' }}>{lastUpdated}</span>
+          <button
+            onClick={handleSyncNow}
+            disabled={syncing}
+            className="rounded px-1.5 py-0.5 disabled:opacity-50"
+            style={{ fontSize: 7, background: '#1E1E3A', color: '#94A3B8', border: '1px solid #334155', cursor: 'pointer' }}
+            title="Force sync metrics from all platforms"
+          >
+            {syncing ? '⟳ syncing' : '↻ sync'}
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -87,18 +122,39 @@ export default function MetricsPanel() {
                 <span style={{ fontSize: 12 }}>{meta.icon}</span>
                 <span style={{ fontSize: 8, color: meta.color, fontFamily: '"Press Start 2P", monospace' }}>{meta.label}</span>
                 <span className="ml-auto rounded px-1" style={{ background: '#1E1E3A', color: statusColor(p.status), fontSize: 7, fontFamily: 'monospace' }}>
-                  {p.status}
+                  {statusLabel(p.status)}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Followers</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.followers)}</span></div>
-                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Posts</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.postsPublished)}</span></div>
-                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Engagement</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{p.engagementRate === null ? '—' : `${(p.engagementRate * 100).toFixed(2)}%`}</span></div>
-                <div className="flex justify-between"><span style={{ fontSize: 8, color: '#64748B' }}>Impressions</span><span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.impressions)}</span></div>
+                <div className="flex justify-between">
+                  <span style={{ fontSize: 8, color: '#64748B' }}>Followers</span>
+                  <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.followers)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ fontSize: 8, color: '#64748B' }}>Posts</span>
+                  <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.postsPublished)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ fontSize: 8, color: '#64748B' }}>Engagement</span>
+                  <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>
+                    {p.engagementRate === null ? '—' : `${(p.engagementRate * 100).toFixed(2)}%`}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ fontSize: 8, color: '#64748B' }}>Impressions</span>
+                  <span style={{ fontSize: 8, color: '#E2E8F0', fontFamily: 'monospace' }}>{fmt(p.impressions)}</span>
+                </div>
               </div>
-              <div style={{ fontSize: 7, color: '#334155', fontFamily: 'monospace', marginTop: 4 }}>
-                synced {p.lastSyncedAt ? new Date(p.lastSyncedAt).toLocaleTimeString('en-KE') : '—'}
-              </div>
+              {p.lastSyncedAt && (
+                <div style={{ fontSize: 7, color: '#334155', fontFamily: 'monospace', marginTop: 4 }}>
+                  synced {new Date(p.lastSyncedAt).toLocaleTimeString('en-KE')}
+                </div>
+              )}
+              {p.status === 'not_connected' && (
+                <div style={{ fontSize: 7, color: '#EF4444', fontFamily: 'monospace', marginTop: 4 }}>
+                  Set env var in Vercel to connect
+                </div>
+              )}
             </div>
           )
         })
@@ -120,4 +176,3 @@ export default function MetricsPanel() {
     </div>
   )
 }
-

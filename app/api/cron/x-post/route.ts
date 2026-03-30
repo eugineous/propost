@@ -131,7 +131,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, tweetId, url, mentions: mentionsSummary })
   } catch (err) {
     console.error('[cron/x-post]', err)
-    return NextResponse.json({ error: 'X post failed' }, { status: 500 })
+    // Log failure to agent_actions so it's visible in the dashboard
+    try {
+      await db.insert(agentActions).values({
+        agentName: 'blaze',
+        company: 'xforce',
+        actionType: 'post_failed',
+        details: {
+          platform: 'x',
+          failureReason: String(err).slice(0, 300),
+          summary: `X post failed: ${String(err).slice(0, 100)}`,
+        },
+        outcome: 'error',
+      })
+    } catch { /* ignore secondary DB error */ }
+    return NextResponse.json({ error: 'X post failed', detail: String(err).slice(0, 200) }, { status: 500 })
   }
 }
 
