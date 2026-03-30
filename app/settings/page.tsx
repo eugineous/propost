@@ -159,6 +159,19 @@ export default function SettingsPage() {
 
       <div className="p-6 max-w-4xl mx-auto space-y-6">
 
+        {/* Workflow Editor Link */}
+        <div className="pixel-card p-4">
+          <h2 className="pixel-text text-pp-gold mb-3" style={{ fontSize: 9 }}>WORKFLOW ENGINE</h2>
+          <p className="text-pp-muted mb-3" style={{ fontSize: 8 }}>Create and assign custom workflows to any agent. Control what every agent does and when.</p>
+          <Link
+            href="/settings/workflows"
+            className="inline-block px-4 py-2 rounded pixel-text"
+            style={{ fontSize: 8, background: '#22C55E22', color: '#22C55E', border: '1px solid #22C55E44' }}
+          >
+            ⚙️ OPEN WORKFLOW EDITOR →
+          </Link>
+        </div>
+
         {/* Platform Connections */}
         <div className="pixel-card p-4">
           <h2 className="pixel-text text-pp-gold mb-4" style={{ fontSize: 9 }}>PLATFORM CONNECTIONS</h2>

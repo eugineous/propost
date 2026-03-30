@@ -157,6 +157,40 @@ export async function GET(req: NextRequest) {
     `CREATE INDEX IF NOT EXISTS idx_trends_detected       ON trends(detected_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_daily_metrics_date    ON daily_metrics(date DESC)`,
 
+    // ── Workflow Engine Tables ────────────────────────────────
+    `CREATE TABLE IF NOT EXISTS workflow_definitions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      agent_name TEXT NOT NULL,
+      corp TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      definition JSONB NOT NULL,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_by TEXT DEFAULT 'system',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS workflow_executions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      workflow_id UUID REFERENCES workflow_definitions(id),
+      agent_name TEXT NOT NULL UNIQUE,
+      current_phase_index INTEGER DEFAULT 0,
+      current_step_index INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      last_run_at TIMESTAMPTZ,
+      next_run_at TIMESTAMPTZ NOT NULL,
+      error_count INTEGER DEFAULT 0,
+      last_error TEXT,
+      completed_phases JSONB DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
+    `CREATE INDEX IF NOT EXISTS idx_workflow_executions_next_run ON workflow_executions(next_run_at)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_executions_status   ON workflow_executions(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_workflow_executions_agent    ON workflow_executions(agent_name)`,
+
     // Notify trigger for live activity feed
     `CREATE OR REPLACE FUNCTION notify_activity_feed()
      RETURNS TRIGGER AS $$

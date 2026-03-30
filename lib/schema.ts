@@ -138,3 +138,34 @@ export const crisisEvents = pgTable('crisis_events', {
   detectedAt: timestamp('detected_at', { withTimezone: true }).default(sql`NOW()`),
   resolvedAt: timestamp('resolved_at', { withTimezone: true }),
 })
+
+// ── Workflow Definitions ──────────────────────────────────────
+export const workflowDefinitions = pgTable('workflow_definitions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  agentName: text('agent_name').notNull(),
+  corp: text('corp').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  definition: jsonb('definition').notNull(),
+  isActive: boolean('is_active').default(true),
+  createdBy: text('created_by').default('system'), // 'system' | 'founder'
+  createdAt: timestamp('created_at', { withTimezone: true }).default(sql`NOW()`),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).default(sql`NOW()`),
+})
+
+// ── Workflow Executions ───────────────────────────────────────
+export const workflowExecutions = pgTable('workflow_executions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workflowId: uuid('workflow_id').references(() => workflowDefinitions.id),
+  agentName: text('agent_name').notNull().unique(), // one active execution per agent
+  currentPhaseIndex: integer('current_phase_index').default(0),
+  currentStepIndex: integer('current_step_index').default(0),
+  status: text('status').default('active'), // active|paused|completed|error
+  lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }).notNull(),
+  errorCount: integer('error_count').default(0),
+  lastError: text('last_error'),
+  completedPhases: jsonb('completed_phases').default('[]'),
+  createdAt: timestamp('created_at', { withTimezone: true }).default(sql`NOW()`),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).default(sql`NOW()`),
+})

@@ -1,13 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react'
 import HQOffice from '@/components/hq/HQOffice'
 import ActivityFeed from '@/components/ActivityFeed'
 import MetricsPanel from '@/components/MetricsPanel'
 import CommandPanel from '@/components/CommandPanel'
 import WatercoolerChat from '@/components/WatercoolerChat'
 import type { CharacterState } from '@/lib/types'
+
+// Lazy-load the 3D office to avoid SSR issues with Three.js
+const Office3D = lazy(() => import('@/components/Office3D'))
 
 const NAV_LINKS = [
   { href: '/', label: '🏢 Empire' },
@@ -274,6 +277,12 @@ export default function DashboardClient() {
               </div>
             )}
             <HQOffice agentStates={agentStates} onAgentClick={handleAgentClick} />
+            {/* 3D Office toggle — click to switch */}
+            <div style={{ marginTop: 8, textAlign: 'right' }}>
+              <Suspense fallback={<div style={{ color: '#666', fontSize: 10, fontFamily: 'monospace' }}>Loading 3D Office...</div>}>
+                <Office3D />
+              </Suspense>
+            </div>
           </div>
 
           <div className="flex-1 overflow-hidden" style={{ background: '#0D0D1A' }}>
