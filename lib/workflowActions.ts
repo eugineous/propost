@@ -18,15 +18,12 @@ import { run as scribeRun } from '@/agents/intelcore/scribe'
 import { run as sentryRun } from '@/agents/intelcore/sentry'
 import { run as novaRun } from '@/agents/linkedelite/nova'
 import { run as auroraRun } from '@/agents/gramgod/aurora'
+import { generateText } from '@/lib/ai'
 import { cleanEnvValue } from '@/lib/env'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 import { desc, gte } from 'drizzle-orm'
 
-async function gemini(prompt: string): Promise<string> {
-  const genAI = new GoogleGenerativeAI(cleanEnvValue(process.env.GEMINI_API_KEY))
-  const model = genAI.getGenerativeModel({ model: cleanEnvValue(process.env.GEMINI_MODEL) || 'gemini-2.0-flash' })
-  const result = await model.generateContent(prompt)
-  return result.response.text()
+async function gemini(prompt: string, preferNvidia = false): Promise<string> {
+  return generateText(prompt, { preferNvidia })
 }
 
 async function logAction(agentName: string, company: string, actionType: string, details: Record<string, unknown>, outcome: string, durationMs = 0) {
