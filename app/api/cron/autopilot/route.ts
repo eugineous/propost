@@ -2,8 +2,10 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { validateCronSecret } from '@/lib/cronAuth'
 import { db } from '@/lib/db'
-import { agentActions } from '@/lib/schema'
+import { agentActions, workflowExecutions } from '@/lib/schema'
 import { scheduleAllDueAgents } from '@/lib/workflowEngine'
+import { seedDefaultWorkflows } from '@/lib/defaultWorkflows'
+import { sql } from 'drizzle-orm'
 
 export async function GET(req: NextRequest) {
   // Allow cron secret OR internal secret (for browser-triggered runs)
@@ -11,6 +13,19 @@ export async function GET(req: NextRequest) {
   const isInternal = internalSecret && internalSecret === process.env.INTERNAL_SECRET
   if (!isInternal && !validateCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Auto-seed workflows on first run if table is empty
+  const [countRow] = await db.select({ count: sql<number>`count(*)` }).from(workflowExecutions)
+  if (Number(countRow?.count ?? 0) === 0) {
+    const { seeded } = await seedDefaultWorkflows()
+    await db.insert(agentActions).values({
+      agentName: 'sovereign',
+      company: 'intelcore',
+      actionType: 'empire_bootstrap',
+      details: { summary: `Auto-seeded ${seeded} agent workflows — empire is live` },
+      outcome: 'success',
+    })
   }
 
   const igEnabled = Boolean(process.env.INSTAGRAM_ACCESS_TOKEN && process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID)
