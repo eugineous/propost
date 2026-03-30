@@ -2,10 +2,5 @@ name = "propost-autopilot"
 main = "autopilot-cron.js"
 compatibility_date = "2024-01-01"
 
-# Cron triggers — every 5 minutes
 [triggers]
 crons = ["*/5 * * * *"]
-
-# Environment variables (set via: wrangler secret put CRON_SECRET)
-# PROPOST_URL = "https://propost.vercel.app"
-# CRON_SECRET = "propost-cron-371667210-secret"
