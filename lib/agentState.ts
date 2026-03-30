@@ -6,12 +6,6 @@ import { AgentStateKV, Corp } from '@/lib/types'
 import { db } from '@/lib/db'
 import { agentActions } from '@/lib/schema'
 
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID!
-const CF_KV_AGENT_STATE_ID = process.env.CF_KV_AGENT_STATE_ID!
-const CF_API_TOKEN = process.env.CF_API_TOKEN!
-
-const KV_BASE_URL = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_AGENT_STATE_ID}/values`
-
 const DEFAULT_STATE: AgentStateKV = {
   lastRunAt: '',
   lastOutcome: '',
@@ -22,16 +16,31 @@ const DEFAULT_STATE: AgentStateKV = {
   isPaused: false,
 }
 
+// In-memory fallback when CF KV credentials are not configured
+const memoryState: Record<string, AgentStateKV> = {}
+
+function cfConfigured(): boolean {
+  return Boolean(process.env.CF_ACCOUNT_ID && process.env.CF_KV_AGENT_STATE_ID && process.env.CF_API_TOKEN)
+}
+
+function kvBaseUrl(): string {
+  return `https://api.cloudflare.com/client/v4/accounts/${process.env.CF_ACCOUNT_ID}/storage/kv/namespaces/${process.env.CF_KV_AGENT_STATE_ID}/values`
+}
+
 function agentKey(agentName: string): string {
   return `agent:${agentName}:state`
 }
 
 async function kvGet(key: string): Promise<AgentStateKV | null> {
-  const res = await fetch(`${KV_BASE_URL}/${encodeURIComponent(key)}`, {
-    headers: { Authorization: `Bearer ${CF_API_TOKEN}` },
+  if (!cfConfigured()) return memoryState[key] ?? null
+  const res = await fetch(`${kvBaseUrl()}/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}` },
   })
   if (res.status === 404) return null
-  if (!res.ok) throw new Error(`KV GET failed: ${res.status} ${await res.text()}`)
+  if (!res.ok) {
+    console.warn(`[agentState] KV GET failed: ${res.status} — using in-memory fallback`)
+    return memoryState[key] ?? null
+  }
   const text = await res.text()
   try {
     return JSON.parse(text) as AgentStateKV
@@ -41,15 +50,19 @@ async function kvGet(key: string): Promise<AgentStateKV | null> {
 }
 
 async function kvPut(key: string, value: AgentStateKV): Promise<void> {
-  const res = await fetch(`${KV_BASE_URL}/${encodeURIComponent(key)}`, {
+  memoryState[key] = value
+  if (!cfConfigured()) return
+  const res = await fetch(`${kvBaseUrl()}/${encodeURIComponent(key)}`, {
     method: 'PUT',
     headers: {
-      Authorization: `Bearer ${CF_API_TOKEN}`,
+      Authorization: `Bearer ${process.env.CF_API_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(value),
   })
-  if (!res.ok) throw new Error(`KV PUT failed: ${res.status} ${await res.text()}`)
+  if (!res.ok) {
+    console.warn(`[agentState] KV PUT failed: ${res.status} — state saved to memory only`)
+  }
 }
 
 export async function getAgentState(agentName: string): Promise<AgentStateKV> {

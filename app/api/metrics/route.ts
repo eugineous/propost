@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const platforms = ['x', 'instagram', 'linkedin', 'facebook']
     const platformMetrics: PlatformMetrics[] = []
     const tokenMap: Record<string, boolean> = {
-      x: Boolean(process.env.TWITTER_BEARER_TOKEN || process.env.TWITTER_ACCESS_TOKEN),
+      x: Boolean(process.env.X_BEARER_TOKEN || process.env.X_ACCESS_TOKEN || process.env.TWITTER_BEARER_TOKEN || process.env.TWITTER_ACCESS_TOKEN),
       instagram: Boolean(process.env.INSTAGRAM_ACCESS_TOKEN && process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID),
       linkedin: Boolean(process.env.LINKEDIN_ACCESS_TOKEN),
       facebook: Boolean(process.env.FACEBOOK_ACCESS_TOKEN && process.env.FACEBOOK_PAGE_ID),
