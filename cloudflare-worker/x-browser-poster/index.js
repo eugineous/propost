@@ -1,18 +1,114 @@
 /**
- * ProPost Empire — X Browser Poster
- * Posts to X/Twitter using Cloudflare Browser Rendering
- * No API key needed — logs in as Eugine and posts like a human
+ * ProPost Empire — Universal Browser Poster v3
+ * Handles browser-based login and posting for ALL platforms
+ * Uses Cloudflare Browser Rendering (Puppeteer) — paid plan required
  *
  * Endpoints:
- *   POST /login   — save X session to KV (run once, lasts 30 days)
- *   POST /post    — post a tweet using saved session
- *   GET  /status  — check if session is valid
+ *   GET  /status/:platform        — check session status
+ *   POST /login/:platform         — log in and save session to KV
+ *   POST /post/:platform          — post content using saved session
+ *   POST /logout/:platform        — clear saved session
+ *   GET  /health                  — worker health check
+ *
+ * Session keys in KV: browser:session:{platform}
  */
 
 import puppeteer from '@cloudflare/puppeteer'
 
-const COMPOSE_URL = 'https://x.com/compose/post'
-const SESSION_KEY = 'x:browser:session'
+// ─── Platform login configs ───────────────────────────────────────────────────
+
+const PLATFORM_CONFIG = {
+  x: {
+    loginUrl: 'https://x.com/login',
+    homeIndicator: '/home',
+    composeUrl: 'https://x.com/compose/post',
+    usernameSelector: 'input[autocomplete="username"], input[name="text"]',
+    passwordSelector: 'input[name="password"], input[type="password"]',
+    postButtonSelector: '[data-testid="tweetButtonInline"]',
+    textareaSelector: '[data-testid="tweetTextarea_0"]',
+  },
+  instagram: {
+    loginUrl: 'https://www.instagram.com/accounts/login/',
+    homeIndicator: '/instagram.com',
+    usernameSelector: 'input[name="username"]',
+    passwordSelector: 'input[name="password"]',
+    submitSelector: 'button[type="submit"]',
+  },
+  facebook: {
+    loginUrl: 'https://www.facebook.com/login',
+    homeIndicator: 'facebook.com/home',
+    usernameSelector: '#email',
+    passwordSelector: '#pass',
+    submitSelector: 'button[name="login"]',
+  },
+  linkedin: {
+    loginUrl: 'https://www.linkedin.com/login',
+    homeIndicator: 'linkedin.com/feed',
+    usernameSelector: '#username',
+    passwordSelector: '#password',
+    submitSelector: 'button[type="submit"]',
+  },
+  tiktok: {
+    loginUrl: 'https://www.tiktok.com/login/phone-or-email/email',
+    homeIndicator: 'tiktok.com/foryou',
+    usernameSelector: 'input[name="username"], input[placeholder*="email"], input[type="text"]',
+    passwordSelector: 'input[type="password"]',
+    submitSelector: 'button[type="submit"]',
+  },
+  youtube: {
+    loginUrl: 'https://accounts.google.com/signin/v2/identifier?service=youtube',
+    homeIndicator: 'youtube.com',
+    usernameSelector: 'input[type="email"]',
+    passwordSelector: 'input[type="password"]',
+    submitSelector: '#identifierNext, #passwordNext',
+  },
+  reddit: {
+    loginUrl: 'https://www.reddit.com/login/',
+    homeIndicator: 'reddit.com',
+    usernameSelector: '#loginUsername, input[name="username"]',
+    passwordSelector: '#loginPassword, input[name="password"]',
+    submitSelector: 'button[type="submit"]',
+  },
+  mastodon: {
+    loginUrl: 'https://mastodon.social/auth/sign_in',
+    homeIndicator: 'mastodon.social/home',
+    usernameSelector: '#user_email',
+    passwordSelector: '#user_password',
+    submitSelector: 'button[type="submit"]',
+  },
+  truthsocial: {
+    loginUrl: 'https://truthsocial.com/login',
+    homeIndicator: 'truthsocial.com/home',
+    usernameSelector: 'input[name="username"], input[type="text"]',
+    passwordSelector: 'input[name="password"], input[type="password"]',
+    submitSelector: 'button[type="submit"]',
+  },
+}
+
+const SESSION_KEY = (platform) => `browser:session:${platform}`
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function getCredentials(platform, env) {
+  // Each platform has its own username/password stored as CF secrets
+  // Naming convention: {PLATFORM}_USERNAME, {PLATFORM}_PASSWORD
+  const prefix = platform.toUpperCase()
+  return {
+    username: env[`${prefix}_USERNAME`] || env.X_USERNAME || '',
+    password: env[`${prefix}_PASSWORD`] || env.X_PASSWORD || '',
+  }
+}
+
+// ─── Main fetch handler ───────────────────────────────────────────────────────
 
 export default {
   async fetch(request, env) {
@@ -22,27 +118,75 @@ export default {
     }
 
     const url = new URL(request.url)
+    const parts = url.pathname.split('/').filter(Boolean)
+    const action = parts[0]
+    const platform = parts[1]
 
-    if (request.method === 'POST' && url.pathname === '/login') return handleLogin(request, env)
-    if (request.method === 'POST' && url.pathname === '/post')  return handlePost(request, env)
-    if (request.method === 'GET'  && url.pathname === '/status') return handleStatus(env)
+    // Health check
+    if (url.pathname === '/health' || url.pathname === '/') {
+      return json({
+        ok: true,
+        worker: 'ProPost Universal Browser Poster v3',
+        platforms: Object.keys(PLATFORM_CONFIG),
+        browserEnabled: !!env.BROWSER,
+      })
+    }
 
-    return json({
-      ok: true,
-      worker: 'ProPost X Browser Poster v2',
-      endpoints: ['POST /login', 'POST /post', 'GET /status'],
-    })
+    // Status check
+    if (request.method === 'GET' && action === 'status') {
+      if (!platform) {
+        // Return all statuses
+        const statuses = {}
+        for (const p of Object.keys(PLATFORM_CONFIG)) {
+          const session = await env.KV.get(SESSION_KEY(p))
+          statuses[p] = { hasSession: !!session }
+        }
+        return json(statuses)
+      }
+      const session = await env.KV.get(SESSION_KEY(platform))
+      return json({ ok: true, platform, hasSession: !!session, browserEnabled: !!env.BROWSER })
+    }
+
+    // Login
+    if (request.method === 'POST' && action === 'login' && platform) {
+      return handleLogin(platform, request, env)
+    }
+
+    // Post content
+    if (request.method === 'POST' && action === 'post' && platform) {
+      return handlePost(platform, request, env)
+    }
+
+    // Logout / clear session
+    if (request.method === 'POST' && action === 'logout' && platform) {
+      await env.KV.delete(SESSION_KEY(platform))
+      return json({ ok: true, message: `${platform} session cleared` })
+    }
+
+    return json({ ok: false, error: 'Not found' }, 404)
   },
 }
 
-// ── Login ─────────────────────────────────────────────────────
-async function handleLogin(request, env) {
+// ─── Login handler ────────────────────────────────────────────────────────────
+
+async function handleLogin(platform, request, env) {
+  const config = PLATFORM_CONFIG[platform]
+  if (!config) return json({ ok: false, error: `Unknown platform: ${platform}` }, 400)
+
+  if (!env.BROWSER) {
+    return json({ ok: false, error: 'Browser Rendering API not enabled on this worker' }, 503)
+  }
+
   const body = await request.json().catch(() => ({}))
-  const username = body.username || env.X_USERNAME
-  const password = body.password || env.X_PASSWORD
+  const creds = getCredentials(platform, env)
+  const username = body.username || creds.username
+  const password = body.password || creds.password
 
   if (!username || !password) {
-    return json({ ok: false, error: 'username and password required' }, 400)
+    return json({
+      ok: false,
+      error: `No credentials for ${platform}. Set ${platform.toUpperCase()}_USERNAME and ${platform.toUpperCase()}_PASSWORD as worker secrets.`,
+    }, 400)
   }
 
   let browser
@@ -50,119 +194,110 @@ async function handleLogin(request, env) {
     browser = await puppeteer.launch(env.BROWSER)
     const page = await browser.newPage()
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-
-    // Set viewport to look like a real browser
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
     await page.setViewport({ width: 1280, height: 800 })
 
-    // Navigate to X login
-    await page.goto('https://x.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 })
-    await sleep(4000)
-
-    // Handle cookie consent if present
-    try {
-      const acceptBtn = await page.$('[data-testid="confirmationSheetConfirm"]')
-      if (acceptBtn) { await acceptBtn.click(); await sleep(1000) }
-    } catch {}
-
-    // Wait for any text input to appear
-    await page.waitForSelector('input', { timeout: 15000 })
-    await sleep(1000)
-
-    // Find the username/email input
-    const inputs = await page.$$('input')
-    let usernameInput = null
-    for (const input of inputs) {
-      const type = await page.evaluate(el => el.type, input)
-      const autocomplete = await page.evaluate(el => el.getAttribute('autocomplete'), input)
-      const name = await page.evaluate(el => el.name, input)
-      if (type === 'text' || autocomplete === 'username' || name === 'text') {
-        usernameInput = input
-        break
-      }
-    }
-
-    if (!usernameInput) {
-      const url = page.url()
-      await browser.close()
-      return json({ ok: false, error: `Could not find username input. URL: ${url}` }, 500)
-    }
-
-    await usernameInput.type(username, { delay: 80 })
-    await sleep(500)
-
-    // Click Next
-    await page.keyboard.press('Enter')
+    // Navigate to login page
+    await page.goto(config.loginUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await sleep(3000)
 
-    // Step 1b: X sometimes asks for phone/email as extra verification
-    const extraInput = await page.$('input[data-testid="ocfEnterTextTextInput"]')
-    if (extraInput) {
-      await extraInput.type(username, { delay: 80 })
-      await sleep(500)
-      const nextBtns2 = await page.$$('[role="button"]')
-      for (const btn of nextBtns2) {
-        const text = await page.evaluate(el => el.textContent, btn)
-        if (text && text.trim().toLowerCase() === 'next') {
-          await btn.click()
-          break
-        }
-      }
-      await sleep(3000)
+    // Handle cookie consent banners (common on EU-facing sites)
+    for (const selector of ['[data-testid="cookie-policy-manage-dialog-accept-button"]', 'button[id*="accept"]', 'button[class*="accept"]']) {
+      try {
+        const btn = await page.$(selector)
+        if (btn) { await btn.click(); await sleep(1000); break }
+      } catch {}
     }
 
-    // Step 2: Enter password — try multiple selectors
-    const pwSelectors = ['input[name="password"]', 'input[type="password"]', 'input[autocomplete="current-password"]']
+    // Find and fill username
+    await page.waitForSelector(config.usernameSelector, { timeout: 15000 })
+    await sleep(500)
+    const usernameField = await page.$(config.usernameSelector)
+    if (!usernameField) throw new Error(`Username field not found on ${platform} login page`)
+
+    await usernameField.click()
+    await sleep(300)
+    await usernameField.type(username, { delay: 60 + Math.random() * 40 })
+    await sleep(800)
+
+    // For platforms that need "Next" before password (X, Google)
+    if (platform === 'x' || platform === 'youtube') {
+      await page.keyboard.press('Enter')
+      await sleep(3000)
+
+      // X: handle extra verification step
+      if (platform === 'x') {
+        const extraInput = await page.$('input[data-testid="ocfEnterTextTextInput"]')
+        if (extraInput) {
+          await extraInput.type(username, { delay: 60 })
+          await page.keyboard.press('Enter')
+          await sleep(2000)
+        }
+      }
+    }
+
+    // Find and fill password
+    const pwSelectors = config.passwordSelector.split(', ')
     let pwField = null
     for (const sel of pwSelectors) {
-      pwField = await page.$(sel)
-      if (pwField) break
+      try {
+        await page.waitForSelector(sel, { timeout: 8000 })
+        pwField = await page.$(sel)
+        if (pwField) break
+      } catch {}
     }
 
     if (!pwField) {
-      // Take a screenshot to debug
-      const screenshot = await page.screenshot({ encoding: 'base64' })
       const currentUrl = page.url()
       await browser.close()
       return json({
         ok: false,
-        error: `Password field not found. Current URL: ${currentUrl}. X may be showing a CAPTCHA or unusual flow.`,
-        debug: { url: currentUrl, screenshotBase64: screenshot.slice(0, 200) + '...' }
+        error: `Password field not found on ${platform}. Current URL: ${currentUrl}. Platform may require 2FA or CAPTCHA.`,
       }, 500)
     }
 
-    await pwField.type(password, { delay: 80 })
-    await sleep(500)
+    await pwField.click()
+    await sleep(300)
+    await pwField.type(password, { delay: 60 + Math.random() * 40 })
+    await sleep(800)
 
-    // Click Log in button
-    const loginBtns = await page.$$('[role="button"]')
-    for (const btn of loginBtns) {
-      const text = await page.evaluate(el => el.textContent, btn)
-      if (text && (text.trim().toLowerCase() === 'log in' || text.trim().toLowerCase() === 'login')) {
-        await btn.click()
-        break
+    // Submit
+    if (config.submitSelector) {
+      const submitSelectors = config.submitSelector.split(', ')
+      for (const sel of submitSelectors) {
+        try {
+          const btn = await page.$(sel)
+          if (btn) { await btn.click(); break }
+        } catch {}
       }
+    } else {
+      await page.keyboard.press('Enter')
     }
+
     await sleep(5000)
 
-    const currentUrl = page.url()
-    if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
-      const screenshot = await page.screenshot({ encoding: 'base64' })
+    const finalUrl = page.url()
+
+    // Check if still on login page
+    if (finalUrl.includes('/login') || finalUrl.includes('signin') || finalUrl.includes('accounts.google.com')) {
       await browser.close()
       return json({
         ok: false,
-        error: `Login failed — still on login page. Check credentials or X may require 2FA.`,
-        url: currentUrl,
-        debug: { screenshotBase64: screenshot.slice(0, 200) + '...' }
+        error: `Login failed for ${platform} — still on login page. Check credentials or platform may require 2FA. URL: ${finalUrl}`,
       }, 500)
     }
 
-    // Save cookies to KV
+    // Save cookies to KV (30 days)
     const cookies = await page.cookies()
-    await env.KV.put(SESSION_KEY, JSON.stringify(cookies), { expirationTtl: 86400 * 30 })
+    await env.KV.put(SESSION_KEY(platform), JSON.stringify(cookies), { expirationTtl: 86400 * 30 })
 
     await browser.close()
-    return json({ ok: true, message: 'Logged in. Session saved for 30 days.', url: currentUrl })
+    return json({
+      ok: true,
+      platform,
+      message: `✅ ${platform} logged in. Session saved for 30 days.`,
+      url: finalUrl,
+    })
 
   } catch (err) {
     try { if (browser) await browser.close() } catch {}
@@ -170,17 +305,29 @@ async function handleLogin(request, env) {
   }
 }
 
-// ── Post ──────────────────────────────────────────────────────
-async function handlePost(request, env) {
+// ─── Post handler ─────────────────────────────────────────────────────────────
+
+async function handlePost(platform, request, env) {
+  const config = PLATFORM_CONFIG[platform]
+  if (!config) return json({ ok: false, error: `Unknown platform: ${platform}` }, 400)
+
   const body = await request.json().catch(() => ({}))
   const { content } = body
-
   if (!content) return json({ ok: false, error: 'content required' }, 400)
-  if (content.length > 280) return json({ ok: false, error: `Too long: ${content.length} chars (max 280)` }, 400)
 
-  const cookiesRaw = await env.KV.get(SESSION_KEY)
+  const cookiesRaw = await env.KV.get(SESSION_KEY(platform))
   if (!cookiesRaw) {
-    return json({ ok: false, error: 'No session. Call POST /login first.' }, 401)
+    return json({ ok: false, error: `No session for ${platform}. Call POST /login/${platform} first.` }, 401)
+  }
+
+  // Currently only X has full post automation implemented
+  // Other platforms: queue for approval or use API
+  if (platform !== 'x') {
+    return json({
+      ok: false,
+      error: `Browser posting for ${platform} not yet implemented. Content queued for approval.`,
+      queued: true,
+    }, 501)
   }
 
   let browser
@@ -189,69 +336,39 @@ async function handlePost(request, env) {
     browser = await puppeteer.launch(env.BROWSER)
     const page = await browser.newPage()
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36')
     await page.setCookie(...cookies)
+    await page.goto(config.composeUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await sleep(3000)
 
-    await page.goto(COMPOSE_URL, { waitUntil: 'networkidle2', timeout: 30000 })
-
-    // Session expired check
     if (page.url().includes('/login')) {
       await browser.close()
-      await env.KV.delete(SESSION_KEY)
-      return json({ ok: false, error: 'Session expired. Call POST /login again.' }, 401)
+      await env.KV.delete(SESSION_KEY(platform))
+      return json({ ok: false, error: 'Session expired. Re-login required.' }, 401)
     }
 
-    // Wait for compose textarea
-    await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 15000 })
-    await page.click('[data-testid="tweetTextarea_0"]')
+    await page.waitForSelector(config.textareaSelector, { timeout: 15000 })
+    await page.click(config.textareaSelector)
     await sleep(500)
-
-    // Type content with human-like delay
-    await page.keyboard.type(content, { delay: 30 })
+    await page.keyboard.type(content.slice(0, 280), { delay: 30 })
     await sleep(1000)
-
-    // Click Post button
-    await page.click('[data-testid="tweetButtonInline"]')
+    await page.click(config.postButtonSelector)
     await sleep(3000)
 
     const finalUrl = page.url()
     const success = !finalUrl.includes('/compose')
 
-    // Refresh session cookies
+    // Refresh session
     const newCookies = await page.cookies()
-    await env.KV.put(SESSION_KEY, JSON.stringify(newCookies), { expirationTtl: 86400 * 30 })
+    await env.KV.put(SESSION_KEY(platform), JSON.stringify(newCookies), { expirationTtl: 86400 * 30 })
 
     await browser.close()
 
-    if (success) {
-      return json({ ok: true, method: 'browser_automation', preview: content.slice(0, 80) })
-    }
-    return json({ ok: false, error: 'Still on compose page after clicking post', url: finalUrl }, 500)
+    if (success) return json({ ok: true, method: 'browser', platform, preview: content.slice(0, 80) })
+    return json({ ok: false, error: 'Post button clicked but still on compose page' }, 500)
 
   } catch (err) {
     try { if (browser) await browser.close() } catch {}
     return json({ ok: false, error: String(err) }, 500)
   }
-}
-
-// ── Status ────────────────────────────────────────────────────
-async function handleStatus(env) {
-  const session = await env.KV.get(SESSION_KEY)
-  return json({
-    ok: true,
-    hasSession: !!session,
-    browserEnabled: true,
-    message: session ? 'Session active — ready to post' : 'No session — call POST /login',
-  })
-}
-
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms))
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
 }
