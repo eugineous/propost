@@ -63,6 +63,71 @@ const STATUS_DOT: Record<string, string> = {
   unresponsive: 'bg-orange-500',
 }
 
+// ─── Post Now Panel ───────────────────────────────────────────────────────────
+
+function PostNowPanel() {
+  const [posting, setPosting] = useState<string | null>(null)
+  const [lastResult, setLastResult] = useState<string | null>(null)
+
+  const firePost = async (platform: 'x' | 'linkedin' | 'both') => {
+    setPosting(platform)
+    setLastResult(null)
+    try {
+      const res = await fetch('/api/post/now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform }),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>
+      const results = (data.results as Array<{ platform: string; success: boolean; postId?: string; error?: string; url?: string }>) ?? []
+      const msgs = results.map((r) =>
+        r.success
+          ? `✅ ${r.platform.toUpperCase()} posted — ${r.url ?? r.postId ?? 'ok'}`
+          : `❌ ${r.platform.toUpperCase()} failed — ${r.error ?? 'unknown error'}`
+      )
+      setLastResult(msgs.join('\n') || (data.error as string) || 'Done')
+    } catch (err) {
+      setLastResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setPosting(null)
+    }
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <div className="text-xs text-blue-400 mb-3 font-bold tracking-wider">POST NOW</div>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => firePost('x')}
+          disabled={!!posting}
+          className="px-3 py-2 bg-sky-700 hover:bg-sky-600 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
+        >
+          {posting === 'x' ? '⏳' : '🐦'} Post to X
+        </button>
+        <button
+          onClick={() => firePost('linkedin')}
+          disabled={!!posting}
+          className="px-3 py-2 bg-blue-800 hover:bg-blue-700 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
+        >
+          {posting === 'linkedin' ? '⏳' : '💼'} Post to LinkedIn
+        </button>
+        <button
+          onClick={() => firePost('both')}
+          disabled={!!posting}
+          className="px-3 py-2 bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
+        >
+          {posting === 'both' ? '⏳ Posting...' : '⚡ Post to Both'}
+        </button>
+      </div>
+      {lastResult && (
+        <div className="mt-3 p-2 bg-gray-800 rounded text-xs text-gray-300 whitespace-pre-line border-l-2 border-blue-500">
+          {lastResult}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EmpireOverview() {
@@ -250,6 +315,9 @@ export default function EmpireOverview() {
               </div>
             )}
           </div>
+
+          {/* POST NOW — immediate fire buttons */}
+          <PostNowPanel />
 
           {/* Company Map */}
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">

@@ -15,6 +15,8 @@ export interface TaskSpec {
   priority?: 1 | 2 | 3
   parentTaskId?: string
   assignedAgent?: string
+  // Pre-generated content stored on the task so agents don't re-generate
+  content?: string
 }
 
 function rowToTask(row: TaskRow): Task {
@@ -52,7 +54,8 @@ export class TaskOrchestrator {
           priority,
           parent_task_id,
           assigned_agent,
-          status
+          status,
+          result
         ) VALUES (
           ${spec.type},
           ${spec.company},
@@ -62,7 +65,8 @@ export class TaskOrchestrator {
           ${spec.priority ?? 2},
           ${spec.parentTaskId ?? null},
           ${spec.assignedAgent ?? null},
-          'queued'
+          'queued',
+          ${spec.content ? JSON.stringify({ content: spec.content }) : null}
         )
         RETURNING *
       `

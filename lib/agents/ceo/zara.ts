@@ -1,10 +1,12 @@
 // ZARA — CEO of XForce Corp (Tier 2)
-// Manages X platform operations, decomposes tasks to Tier 3 agents
+// Manages X platform operations. When content is pre-loaded on the task,
+// executes directly via BLAZE. Otherwise decomposes to Tier 3 agents.
 
 import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
 import { taskOrchestrator } from '../../tasks/orchestrator'
 import { logInfo } from '../../logger'
+import { blaze } from '../xforce/post-executor'
 import type { Task, FounderMessage, AgentResponse } from '../../types'
 
 export class ZARA extends BaseAgent {
@@ -15,9 +17,18 @@ export class ZARA extends BaseAgent {
   async execute(task: Task): Promise<TaskResult> {
     await this.setStatus('active')
     try {
-      logInfo(`[ZARA] Decomposing task ${task.id}`, { type: task.type })
+      logInfo(`[ZARA] Executing task ${task.id}`, { type: task.type })
 
-      // Decompose into sub-tasks for Tier 3 agents
+      // If content is already on the task, execute directly via BLAZE
+      const taskData = task.result as Record<string, unknown> | undefined
+      if (taskData?.content) {
+        logInfo(`[ZARA] Content pre-loaded, delegating directly to BLAZE`)
+        const result = await blaze.execute(task)
+        await this.setStatus('idle')
+        return result
+      }
+
+      // Otherwise decompose into sub-tasks for Tier 3 agents
       const subTasks = this.getSubTaskAgents(task.type)
       for (const agentName of subTasks) {
         await taskOrchestrator.createTask({

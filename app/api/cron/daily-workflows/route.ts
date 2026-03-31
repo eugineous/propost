@@ -91,6 +91,7 @@ async function postToX(pillar: string): Promise<void> {
     contentPillar: 'ai_news',
     priority: 1,
     assignedAgent: 'BLAZE',
+    content: formatted.content,
   })
 
   logInfo(`[x-post] Queued: ${formatted.content.slice(0, 60)}...`)
@@ -129,6 +130,7 @@ async function postToLinkedIn(pillar: string): Promise<void> {
     contentPillar: 'ai_news',
     priority: 1,
     assignedAgent: 'NOVA',
+    content: formatted.content,
   })
 
   logInfo(`[linkedin-post] Queued: ${formatted.content.slice(0, 60)}...`)

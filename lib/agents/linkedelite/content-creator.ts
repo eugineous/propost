@@ -24,22 +24,25 @@ export class ORATOR extends BaseAgent {
         return { success: false, error: `HAWK rate limit reached for LinkedIn` }
       }
 
-      // 2. Get active content pillar
-      const pillar = task.contentPillar ?? await this.getActivePillar()
+      // 2. Get content — use pre-loaded content if available, otherwise generate
+      const taskData = task.result as Record<string, unknown> | undefined
+      let content: string = (taskData?.content as string) ?? ''
 
-      // 3. Generate professional post via AI Router
-      const generated = await aiRouter.route(
-        'generate',
-        `Write a professional LinkedIn post for Eugine Micah about: ${pillar}. 
-        Requirements: minimum 150 characters, professional long-form format, 
-        authority-driven tone, culturally grounded, storytelling-forward. 
-        Use em dashes for emphasis. No AI filler phrases like "delve", "game-changer", "dive into".`,
-        { platform: 'linkedin', contentPillar: pillar, role: 'ORATOR' }
-      )
+      if (!content) {
+        // Generate professional post via AI Router
+        const pillar = task.contentPillar ?? await this.getActivePillar()
+        const generated = await aiRouter.route(
+          'generate',
+          `Write a professional LinkedIn post for Eugine Micah about: ${pillar}. 
+          Requirements: minimum 150 characters, professional long-form format, 
+          authority-driven tone, culturally grounded, storytelling-forward. 
+          Use em dashes for emphasis. No AI filler phrases like "delve", "game-changer", "dive into".`,
+          { platform: 'linkedin', contentPillar: pillar, role: 'ORATOR' }
+        )
+        content = generated.content
+      }
 
-      const content = generated.content
-
-      // 4. Pass through Tone Validator before publishing
+      // 3. Pass through Tone Validator before publishing
       const toneCheck = await aiRouter.route(
         'validate',
         `Validate this LinkedIn post for tone compliance. Check for: authority-driven voice, no AI filler phrases (delve, game-changer, dive into, in today's world), culturally grounded, storytelling-forward. Post: "${content}"`,
@@ -53,7 +56,7 @@ export class ORATOR extends BaseAgent {
         return { success: true, data: { queued: true, reason: 'tone_validation_failed' } }
       }
 
-      // 5. Apply HAWK delay and post
+      // 4. Apply HAWK delay and post
       const delay = await hawk.getDelay('linkedin')
       await new Promise((r) => setTimeout(r, delay))
 
