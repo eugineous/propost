@@ -67,8 +67,13 @@ export default function MonitorPage() {
     !filter || a.name.toLowerCase().includes(filter.toLowerCase()) || a.status.includes(filter)
   )
 
-  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null
-  const companyFilter = params?.get('company')
+  // Use useSearchParams hook instead of window.location (SSR-safe)
+  const [companyFilter, setCompanyFilter] = useState<string | null>(null)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setCompanyFilter(params.get('company'))
+  }, [])
+
   const displayed = companyFilter
     ? filtered.filter((a) => a.name.toLowerCase().includes(companyFilter.toLowerCase()))
     : filtered
