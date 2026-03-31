@@ -1,6 +1,6 @@
 /**
  * ProPost Empire — X Browser Poster
- * Posts to X/Twitter using Cloudflare Browser Rendering (Playwright)
+ * Posts to X/Twitter using Cloudflare Browser Rendering
  * No API key needed — logs in as Eugine and posts like a human
  *
  * Endpoints:
@@ -9,14 +9,13 @@
  *   GET  /status  — check if session is valid
  */
 
-import { launch } from '@cloudflare/playwright'
+import puppeteer from '@cloudflare/puppeteer'
 
 const COMPOSE_URL = 'https://x.com/compose/post'
 const SESSION_KEY = 'x:browser:session'
 
 export default {
   async fetch(request, env) {
-    // Simple auth — require internal secret
     const secret = request.headers.get('x-internal-secret')
     if (secret !== env.INTERNAL_SECRET) {
       return json({ ok: false, error: 'Unauthorized' }, 401)
@@ -30,7 +29,7 @@ export default {
 
     return json({
       ok: true,
-      worker: 'ProPost X Browser Poster',
+      worker: 'ProPost X Browser Poster v2',
       endpoints: ['POST /login', 'POST /post', 'GET /status'],
     })
   },
@@ -38,87 +37,164 @@ export default {
 
 // ── Login ─────────────────────────────────────────────────────
 async function handleLogin(request, env) {
-  const body = await request.json()
+  const body = await request.json().catch(() => ({}))
   const username = body.username || env.X_USERNAME
   const password = body.password || env.X_PASSWORD
 
   if (!username || !password) {
-    return json({ ok: false, error: 'username and password required (or set X_USERNAME/X_PASSWORD secrets)' }, 400)
+    return json({ ok: false, error: 'username and password required' }, 400)
   }
 
-  const browser = await launch(env.BROWSER)
-  const context = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  })
-  const page = await context.newPage()
-
+  let browser
   try {
-    await page.goto('https://x.com/login', { waitUntil: 'networkidle', timeout: 30000 })
+    browser = await puppeteer.launch(env.BROWSER)
+    const page = await browser.newPage()
 
-    // Step 1: username
-    await page.waitForSelector('input[autocomplete="username"]', { timeout: 10000 })
-    await page.fill('input[autocomplete="username"]', username)
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+    // Set viewport to look like a real browser
+    await page.setViewport({ width: 1280, height: 800 })
+
+    // Navigate to X login
+    await page.goto('https://x.com/login', { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await sleep(4000)
+
+    // Handle cookie consent if present
+    try {
+      const acceptBtn = await page.$('[data-testid="confirmationSheetConfirm"]')
+      if (acceptBtn) { await acceptBtn.click(); await sleep(1000) }
+    } catch {}
+
+    // Wait for any text input to appear
+    await page.waitForSelector('input', { timeout: 15000 })
+    await sleep(1000)
+
+    // Find the username/email input
+    const inputs = await page.$$('input')
+    let usernameInput = null
+    for (const input of inputs) {
+      const type = await page.evaluate(el => el.type, input)
+      const autocomplete = await page.evaluate(el => el.getAttribute('autocomplete'), input)
+      const name = await page.evaluate(el => el.name, input)
+      if (type === 'text' || autocomplete === 'username' || name === 'text') {
+        usernameInput = input
+        break
+      }
+    }
+
+    if (!usernameInput) {
+      const url = page.url()
+      await browser.close()
+      return json({ ok: false, error: `Could not find username input. URL: ${url}` }, 500)
+    }
+
+    await usernameInput.type(username, { delay: 80 })
+    await sleep(500)
+
+    // Click Next
     await page.keyboard.press('Enter')
-    await page.waitForTimeout(2000)
+    await sleep(3000)
 
     // Step 1b: X sometimes asks for phone/email as extra verification
-    const extraVerify = await page.$('input[data-testid="ocfEnterTextTextInput"]')
-    if (extraVerify) {
-      await extraVerify.fill(username)
-      await page.keyboard.press('Enter')
-      await page.waitForTimeout(2000)
+    const extraInput = await page.$('input[data-testid="ocfEnterTextTextInput"]')
+    if (extraInput) {
+      await extraInput.type(username, { delay: 80 })
+      await sleep(500)
+      const nextBtns2 = await page.$$('[role="button"]')
+      for (const btn of nextBtns2) {
+        const text = await page.evaluate(el => el.textContent, btn)
+        if (text && text.trim().toLowerCase() === 'next') {
+          await btn.click()
+          break
+        }
+      }
+      await sleep(3000)
     }
 
-    // Step 2: password
-    await page.waitForSelector('input[name="password"]', { timeout: 10000 })
-    await page.fill('input[name="password"]', password)
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(4000)
+    // Step 2: Enter password — try multiple selectors
+    const pwSelectors = ['input[name="password"]', 'input[type="password"]', 'input[autocomplete="current-password"]']
+    let pwField = null
+    for (const sel of pwSelectors) {
+      pwField = await page.$(sel)
+      if (pwField) break
+    }
 
-    // Verify logged in
+    if (!pwField) {
+      // Take a screenshot to debug
+      const screenshot = await page.screenshot({ encoding: 'base64' })
+      const currentUrl = page.url()
+      await browser.close()
+      return json({
+        ok: false,
+        error: `Password field not found. Current URL: ${currentUrl}. X may be showing a CAPTCHA or unusual flow.`,
+        debug: { url: currentUrl, screenshotBase64: screenshot.slice(0, 200) + '...' }
+      }, 500)
+    }
+
+    await pwField.type(password, { delay: 80 })
+    await sleep(500)
+
+    // Click Log in button
+    const loginBtns = await page.$$('[role="button"]')
+    for (const btn of loginBtns) {
+      const text = await page.evaluate(el => el.textContent, btn)
+      if (text && (text.trim().toLowerCase() === 'log in' || text.trim().toLowerCase() === 'login')) {
+        await btn.click()
+        break
+      }
+    }
+    await sleep(5000)
+
     const currentUrl = page.url()
-    if (!currentUrl.includes('/home') && !currentUrl.includes('x.com')) {
-      throw new Error(`Login may have failed. Current URL: ${currentUrl}`)
+    if (currentUrl.includes('/login') || currentUrl.includes('/i/flow/login')) {
+      const screenshot = await page.screenshot({ encoding: 'base64' })
+      await browser.close()
+      return json({
+        ok: false,
+        error: `Login failed — still on login page. Check credentials or X may require 2FA.`,
+        url: currentUrl,
+        debug: { screenshotBase64: screenshot.slice(0, 200) + '...' }
+      }, 500)
     }
 
-    // Save session state to KV (30 days)
-    const storageState = await context.storageState()
-    await env.KV.put(SESSION_KEY, JSON.stringify(storageState), { expirationTtl: 86400 * 30 })
+    // Save cookies to KV
+    const cookies = await page.cookies()
+    await env.KV.put(SESSION_KEY, JSON.stringify(cookies), { expirationTtl: 86400 * 30 })
 
     await browser.close()
     return json({ ok: true, message: 'Logged in. Session saved for 30 days.', url: currentUrl })
 
   } catch (err) {
-    try { await browser.close() } catch {}
+    try { if (browser) await browser.close() } catch {}
     return json({ ok: false, error: String(err) }, 500)
   }
 }
 
 // ── Post ──────────────────────────────────────────────────────
 async function handlePost(request, env) {
-  const { content } = await request.json()
+  const body = await request.json().catch(() => ({}))
+  const { content } = body
 
   if (!content) return json({ ok: false, error: 'content required' }, 400)
   if (content.length > 280) return json({ ok: false, error: `Too long: ${content.length} chars (max 280)` }, 400)
 
-  const sessionRaw = await env.KV.get(SESSION_KEY)
-  if (!sessionRaw) {
+  const cookiesRaw = await env.KV.get(SESSION_KEY)
+  if (!cookiesRaw) {
     return json({ ok: false, error: 'No session. Call POST /login first.' }, 401)
   }
 
-  const storageState = JSON.parse(sessionRaw)
-  const browser = await launch(env.BROWSER)
-  const context = await browser.newContext({
-    storageState,
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  })
-  const page = await context.newPage()
-
+  let browser
   try {
-    // Navigate to compose
-    await page.goto(COMPOSE_URL, { waitUntil: 'networkidle', timeout: 30000 })
+    const cookies = JSON.parse(cookiesRaw)
+    browser = await puppeteer.launch(env.BROWSER)
+    const page = await browser.newPage()
 
-    // If redirected to login, session expired
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    await page.setCookie(...cookies)
+
+    await page.goto(COMPOSE_URL, { waitUntil: 'networkidle2', timeout: 30000 })
+
+    // Session expired check
     if (page.url().includes('/login')) {
       await browser.close()
       await env.KV.delete(SESSION_KEY)
@@ -128,43 +204,32 @@ async function handlePost(request, env) {
     // Wait for compose textarea
     await page.waitForSelector('[data-testid="tweetTextarea_0"]', { timeout: 15000 })
     await page.click('[data-testid="tweetTextarea_0"]')
-    await page.waitForTimeout(500)
+    await sleep(500)
 
-    // Type content naturally (human-like delay)
-    await page.keyboard.type(content, { delay: 25 })
-    await page.waitForTimeout(1000)
-
-    // Verify character count is ok (look for the counter)
-    const charCount = await page.$('[data-testid="tweetButton"] [role="progressbar"]')
-    if (charCount) {
-      const ariaVal = await charCount.getAttribute('aria-valuenow')
-      if (ariaVal && parseInt(ariaVal) < 0) {
-        await browser.close()
-        return json({ ok: false, error: 'Tweet too long after rendering' }, 400)
-      }
-    }
+    // Type content with human-like delay
+    await page.keyboard.type(content, { delay: 30 })
+    await sleep(1000)
 
     // Click Post button
     await page.click('[data-testid="tweetButtonInline"]')
-    await page.waitForTimeout(3000)
+    await sleep(3000)
 
-    // Check result
     const finalUrl = page.url()
     const success = !finalUrl.includes('/compose')
 
-    // Refresh session TTL
-    const newState = await context.storageState()
-    await env.KV.put(SESSION_KEY, JSON.stringify(newState), { expirationTtl: 86400 * 30 })
+    // Refresh session cookies
+    const newCookies = await page.cookies()
+    await env.KV.put(SESSION_KEY, JSON.stringify(newCookies), { expirationTtl: 86400 * 30 })
 
     await browser.close()
 
     if (success) {
       return json({ ok: true, method: 'browser_automation', preview: content.slice(0, 80) })
     }
-    return json({ ok: false, error: 'Post button clicked but still on compose page', url: finalUrl }, 500)
+    return json({ ok: false, error: 'Still on compose page after clicking post', url: finalUrl }, 500)
 
   } catch (err) {
-    try { await browser.close() } catch {}
+    try { if (browser) await browser.close() } catch {}
     return json({ ok: false, error: String(err) }, 500)
   }
 }
@@ -175,8 +240,13 @@ async function handleStatus(env) {
   return json({
     ok: true,
     hasSession: !!session,
+    browserEnabled: true,
     message: session ? 'Session active — ready to post' : 'No session — call POST /login',
   })
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms))
 }
 
 function json(data, status = 200) {

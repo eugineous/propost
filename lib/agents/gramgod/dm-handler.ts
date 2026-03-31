@@ -1,13 +1,42 @@
-// CHAT — GramGod Tier 3 DM handler
-// Classifies Instagram DMs and generates replies for non-spam
+// CHAT — GramGod Tier 3 DM Handler
+// Handles Instagram DMs — 20 per day, human-like timing
+// Classifies: fan | brand_deal | friend | spam
+// Responds in Eugine's voice — warm with fans, professional with brands
 
 import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
-import { logInfo } from '../../logger'
-import { getDb, withRetry } from '../../db/client'
+import { hawk } from '../../hawk/engine'
+import { logAction, logInfo, logError } from '../../logger'
+import { BRAND_CONTEXT } from '../../brand/context'
+import { getDb } from '../../db/client'
 import type { Task } from '../../types'
 
-type DMCategory = 'brand_inquiry' | 'fan' | 'spam'
+const DAILY_DM_LIMIT = 20
+const MIN_RESPONSE_DELAY_MS = 2 * 60 * 1000   // 2 min min
+const MAX_RESPONSE_DELAY_MS = 8 * 60 * 1000   // 8 min max
+
+type DMTone = 'fan' | 'brand_deal' | 'friend' | 'spam' | 'question'
+
+function classifyDM(text: string): DMTone {
+  const lower = text.toLowerCase()
+  if (lower.includes('collab') || lower.includes('sponsor') || lower.includes('brand deal') || lower.includes('partnership') || lower.includes('paid')) return 'brand_deal'
+  if (lower.includes('bro') || lower.includes('fam') || lower.includes('boss') || lower.includes('chief')) return 'friend'
+  if (lower.includes('?') || lower.includes('how') || lower.includes('where') || lower.includes('when')) return 'question'
+  if (lower.includes('follow') || lower.includes('check out my') || lower.includes('click link')) return 'spam'
+  return 'fan'
+}
+
+const DM_PROMPTS: Record<DMTone, string> = {
+  fan: `Reply warmly and personally. Make them feel seen and appreciated. 1-2 sentences. Genuine, not generic.`,
+  brand_deal: `Reply professionally. Acknowledge the interest. Ask them to send their media kit and rates. Keep it brief and professional. Under 200 chars.`,
+  friend: `Reply casually like you're talking to a friend. Use their energy. Short and real.`,
+  question: `Answer the question directly. If you don't know, say so honestly. Under 200 chars.`,
+  spam: `Do not reply. Return SKIP.`,
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
 
 export class CHAT extends BaseAgent {
   readonly name = 'CHAT'
@@ -17,92 +46,148 @@ export class CHAT extends BaseAgent {
   async execute(task: Task): Promise<TaskResult> {
     await this.setStatus('active')
     try {
-      const taskData = task.result as Record<string, unknown> | undefined
-      const dmContent = taskData?.content as string | undefined
-      const senderId = taskData?.senderId as string | undefined
-
-      if (!dmContent) {
-        return { success: false, error: 'CHAT requires DM content in task data' }
-      }
-
-      // 1. Classify DM using AI Router
-      const classifyResponse = await aiRouter.route(
-        'analyze',
-        `Classify this Instagram DM into exactly one category: brand_inquiry, fan, or spam.
-        DM: "${dmContent}"
-        Respond with only the category name.`,
-        { role: 'CHAT', platform: 'instagram' }
-      )
-
-      const category = this.parseCategory(classifyResponse.content)
-      logInfo(`[CHAT] DM classified as: ${category}`, { taskId: task.id, senderId })
-
-      // 2. If spam, discard
-      if (category === 'spam') {
+      const todayCount = await this.getTodayDMCount()
+      if (todayCount >= DAILY_DM_LIMIT) {
+        logInfo(`[CHAT] Daily DM limit reached (${todayCount}/${DAILY_DM_LIMIT})`)
         await this.setStatus('idle')
-        return { success: true, data: { category, action: 'discarded' } }
+        return { success: true, data: { skipped: true, reason: 'daily_limit_reached' } }
       }
 
-      // 3. Generate reply for non-spam
-      const dmTier = category === 'brand_inquiry' ? 'Tier 1 (brand/collab)' : 'Tier 2-3 (fan/community)'
-      const replyResponse = await aiRouter.route(
-        'draft',
-        `Write a reply to this Instagram DM. DM category: ${dmTier}.
-        DM content: "${dmContent}"
-        
-        VOICE RULES:
-        - If brand inquiry: Professional + warm. Ask for brief. Route to euginemicah@gmail.com.
-        - If fan: Personal, warm, brief. Make them feel seen. Use Sheng if they wrote in Sheng.
-        - NEVER use: "I hope this helps", "excited to share", "as an AI"
-        - Use em dashes (—) not hyphens. Contractions are fine.
-        - Under 200 characters. Sound like Eugine Micah, not a bot.
-        
-        If message is over 48h old, open with: "Just caught up on DMs — sorry for the delay."`,
-        { role: 'CHAT', platform: 'instagram', dmCategory: category }
-      )
+      const dms = await this.fetchPendingDMs()
+      if (dms.length === 0) {
+        await this.setStatus('idle')
+        return { success: true, data: { replied: 0 } }
+      }
 
-      const reply = replyResponse.content.slice(0, 200)
+      let replied = 0
 
-      // 4. Submit to Approval Queue
-      const approvalId = await this.submitToApprovalQueue(task, reply, category, senderId)
+      for (const dm of dms) {
+        if (todayCount + replied >= DAILY_DM_LIMIT) break
+
+        const rateStatus = await hawk.checkRateLimit('instagram')
+        if (!rateStatus.allowed) break
+
+        const tone = classifyDM(dm.text)
+        if (tone === 'spam') continue
+
+        const generated = await aiRouter.route(
+          'generate',
+          `You are replying to this Instagram DM as Eugine Micah:
+
+Message: "${dm.text}"
+From: ${dm.senderName}
+Tone: ${tone}
+
+${DM_PROMPTS[tone]}
+
+VOICE:
+${BRAND_CONTEXT.slice(0, 400)}
+
+Write ONLY the reply. No quotes. No prefix. Just the message.
+If spam, write: SKIP`,
+          { platform: 'instagram', role: 'CHAT', tone }
+        )
+
+        const reply = generated.content.trim()
+        if (reply === 'SKIP') continue
+
+        // Human-like delay
+        const delay = MIN_RESPONSE_DELAY_MS + Math.random() * (MAX_RESPONSE_DELAY_MS - MIN_RESPONSE_DELAY_MS)
+        await sleep(Math.min(delay, 3000))
+
+        // Send via Instagram API
+        const sent = await this.sendInstagramDM(dm.threadId, reply)
+
+        if (sent) {
+          await logAction({
+            taskId: task.id,
+            agentName: this.name,
+            company: this.company,
+            platform: 'instagram',
+            actionType: 'dm_reply',
+            content: reply,
+            status: 'success',
+          })
+          await hawk.recordAction('instagram')
+          replied++
+          logInfo(`[CHAT] Replied to DM from ${dm.senderName} (tone: ${tone})`)
+        }
+      }
 
       await this.setStatus('idle')
-      return { success: true, data: { category, queued: true, approvalId, reply } }
+      return { success: true, data: { replied, todayTotal: todayCount + replied } }
     } catch (err) {
+      logError(`[CHAT] DM cycle failed`, err)
       this.handleError(err, task.id)
       return { success: false, error: err instanceof Error ? err.message : String(err) }
     }
   }
 
-  private parseCategory(text: string): DMCategory {
-    const lower = text.toLowerCase().trim()
-    if (lower.includes('brand_inquiry') || lower.includes('brand inquiry')) return 'brand_inquiry'
-    if (lower.includes('spam')) return 'spam'
-    return 'fan'
+  private async getTodayDMCount(): Promise<number> {
+    try {
+      const db = getDb()
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const rows = await db`
+        SELECT COUNT(*) as count FROM actions
+        WHERE agent_name = 'CHAT' AND action_type = 'dm_reply'
+          AND status = 'success' AND timestamp >= ${today.toISOString()}
+      `
+      return parseInt((rows as Array<{ count: string }>)[0]?.count ?? '0')
+    } catch { return 0 }
   }
 
-  private async submitToApprovalQueue(
-    task: Task,
-    content: string,
-    category: DMCategory,
-    senderId?: string
-  ): Promise<string> {
-    const rows = await withRetry(async () => {
-      const db = getDb()
-      return db`
-        INSERT INTO approval_queue (
-          task_id, action_type, platform, agent_name,
-          content, content_preview, risk_level, risk_score,
-          failure_context, status
-        ) VALUES (
-          ${task.id}, 'dm', 'instagram', ${this.name},
-          ${content}, ${content.slice(0, 100)}, 'low', 10,
-          ${JSON.stringify({ category, senderId: senderId ?? null })}, 'pending'
-        )
-        RETURNING id
-      `
-    })
-    return (rows as Array<{ id: string }>)[0]?.id ?? ''
+  private async fetchPendingDMs(): Promise<Array<{ threadId: string; text: string; senderName: string; senderId: string }>> {
+    try {
+      const token = process.env.INSTAGRAM_ACCESS_TOKEN
+      const igId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID
+      if (!token || !igId) return []
+
+      const res = await fetch(
+        `https://graph.instagram.com/v18.0/${igId}/conversations?fields=messages{message,from}&access_token=${token}`
+      )
+      if (!res.ok) return []
+
+      const data = await res.json() as {
+        data?: Array<{
+          id: string
+          messages?: { data?: Array<{ message: string; from: { id: string; name: string } }> }
+        }>
+      }
+
+      const dms: Array<{ threadId: string; text: string; senderName: string; senderId: string }> = []
+      for (const thread of data.data ?? []) {
+        const msgs = thread.messages?.data ?? []
+        const lastMsg = msgs[msgs.length - 1]
+        if (lastMsg && lastMsg.from.id !== igId) {
+          dms.push({
+            threadId: thread.id,
+            text: lastMsg.message,
+            senderName: lastMsg.from.name,
+            senderId: lastMsg.from.id,
+          })
+        }
+      }
+      return dms.slice(0, 20)
+    } catch { return [] }
+  }
+
+  private async sendInstagramDM(threadId: string, message: string): Promise<boolean> {
+    try {
+      const token = process.env.INSTAGRAM_ACCESS_TOKEN
+      const igId = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID
+      if (!token || !igId) return false
+
+      const res = await fetch(`https://graph.instagram.com/v18.0/${igId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { thread_key: threadId },
+          message: { text: message },
+          access_token: token,
+        }),
+      })
+      return res.ok
+    } catch { return false }
   }
 }
 

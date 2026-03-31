@@ -337,8 +337,29 @@ export async function GET() {
   const xRate = await hawk.checkRateLimit('x').catch(() => ({ allowed: false, remaining: 0, resetAt: new Date() }))
   const liRate = await hawk.checkRateLimit('linkedin').catch(() => ({ allowed: false, remaining: 0, resetAt: new Date() }))
 
+  // Check browser poster status
+  let browserPosterStatus = 'not_configured'
+  const browserPosterUrl = process.env.X_BROWSER_POSTER_URL
+  if (browserPosterUrl) {
+    try {
+      const res = await fetch(`${browserPosterUrl}/status`, {
+        headers: { 'x-internal-secret': process.env.INTERNAL_SECRET ?? '' },
+      })
+      const data = await res.json() as { hasSession?: boolean; browserEnabled?: boolean }
+      browserPosterStatus = data.browserEnabled ? (data.hasSession ? 'ready' : 'needs_login') : 'browser_api_disabled'
+    } catch {
+      browserPosterStatus = 'unreachable'
+    }
+  }
+
   return NextResponse.json({
-    x: { configured: xReady, rateLimit: xRate },
+    x: {
+      configured: xReady,
+      apiTier: xReady ? 'check_credits' : 'not_configured',
+      browserPoster: browserPosterStatus,
+      rateLimit: xRate,
+      note: 'X API free tier cannot post. Needs Basic plan ($100/mo) OR Cloudflare Browser Rendering.',
+    },
     linkedin: { configured: liReady, rateLimit: liRate },
     readyToPosts: xReady || liReady,
   })

@@ -68,6 +68,11 @@ const STATUS_DOT: Record<string, string> = {
 function PostNowPanel() {
   const [posting, setPosting] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<string | null>(null)
+  const [status, setStatus] = useState<Record<string, unknown> | null>(null)
+
+  useEffect(() => {
+    fetch('/api/post/now').then(r => r.json()).then(setStatus).catch(() => {})
+  }, [])
 
   const firePost = async (platform: 'x' | 'linkedin' | 'both') => {
     setPosting(platform)
@@ -83,7 +88,7 @@ function PostNowPanel() {
       const msgs = results.map((r) =>
         r.success
           ? `✅ ${r.platform.toUpperCase()} posted — ${r.url ?? r.postId ?? 'ok'}`
-          : `❌ ${r.platform.toUpperCase()} failed — ${r.error ?? 'unknown error'}`
+          : `❌ ${r.platform.toUpperCase()} — ${r.error ?? 'failed'}`
       )
       setLastResult(msgs.join('\n') || (data.error as string) || 'Done')
     } catch (err) {
@@ -93,9 +98,20 @@ function PostNowPanel() {
     }
   }
 
+  const xStatus = status ? (status.x as Record<string, unknown>) : null
+  const liStatus = status ? (status.linkedin as Record<string, unknown>) : null
+
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-      <div className="text-xs text-blue-400 mb-3 font-bold tracking-wider">POST NOW</div>
+      <div className="text-xs text-blue-400 mb-3 font-bold tracking-wider flex items-center gap-2">
+        POST NOW
+        {status && (
+          <span className="text-gray-600 font-normal normal-case">
+            {xStatus?.configured ? '· X ready' : '· X: needs API upgrade'}
+            {liStatus?.configured ? ' · LinkedIn ready' : ' · LinkedIn: needs token'}
+          </span>
+        )}
+      </div>
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={() => firePost('x')}
@@ -118,6 +134,12 @@ function PostNowPanel() {
         >
           {posting === 'both' ? '⏳ Posting...' : '⚡ Post to Both'}
         </button>
+        <a
+          href="/inbox"
+          className="px-3 py-2 bg-yellow-800 hover:bg-yellow-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
+        >
+          📋 Approval Queue
+        </a>
       </div>
       {lastResult && (
         <div className="mt-3 p-2 bg-gray-800 rounded text-xs text-gray-300 whitespace-pre-line border-l-2 border-blue-500">
@@ -283,6 +305,7 @@ export default function EmpireOverview() {
           <Link href="/analytics" className="hover:text-white transition-colors">Analytics</Link>
           <Link href="/memory" className="hover:text-white transition-colors">Memory</Link>
           <Link href="/office" className="hover:text-white transition-colors">Office</Link>
+          <Link href="/connect" className="hover:text-white transition-colors text-blue-400">Connect</Link>
           <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
         </div>
       </nav>

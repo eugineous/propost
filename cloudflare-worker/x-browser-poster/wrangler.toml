@@ -3,24 +3,17 @@ main = "index.js"
 compatibility_date = "2025-09-15"
 compatibility_flags = ["nodejs_compat"]
 
-[build]
-command = ""
-
-[build.upload]
-format = "modules"
-
-[[rules]]
-type = "ESModule"
-globs = ["**/*.js"]
-
 [browser]
 binding = "BROWSER"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "placeholder"
+id = "1ed3ccbd7a104394a4e050a01256bd2f"
 
-# Secrets to set via wrangler:
+[vars]
+ENVIRONMENT = "production"
+
+# Secrets (already set):
 # wrangler secret put INTERNAL_SECRET --name propost-x-poster
 # wrangler secret put X_USERNAME --name propost-x-poster
 # wrangler secret put X_PASSWORD --name propost-x-poster

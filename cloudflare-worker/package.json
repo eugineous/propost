@@ -9,8 +9,11 @@
     "secrets": "echo 'Run: wrangler secret put CRON_SECRET && wrangler secret put INTERNAL_SECRET && wrangler secret put PROPOST_URL && wrangler secret put WEBHOOK_VERIFY_TOKEN && wrangler secret put X_WEBHOOK_SECRET && wrangler secret put INSTAGRAM_APP_SECRET && wrangler secret put FACEBOOK_APP_SECRET && wrangler secret put LINKEDIN_CLIENT_SECRET && wrangler secret put X_BROWSER_POSTER_URL'"
   },
   "devDependencies": {
-    "wrangler": "^3.0.0",
     "@cloudflare/workers-types": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.0.6"
   }
 }

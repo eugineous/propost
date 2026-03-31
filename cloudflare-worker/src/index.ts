@@ -75,6 +75,8 @@ const CRON_JOBS: CronJob[] = [
   { path: '/api/cron/ai-news', label: 'ai-news', shouldRun: (d) => d.getUTCMinutes() === 0 && [3, 9, 15, 21].includes(d.getUTCHours()) },
   { path: '/api/cron/analytics', label: 'analytics', shouldRun: (d) => d.getUTCHours() === 2 && d.getUTCMinutes() === 0 },
   { path: '/api/cron/x-post', label: 'x-post', shouldRun: (d) => d.getUTCMinutes() === 0 },
+  // Replies: 3x per day at 6AM, 10AM, 3PM UTC (= 9AM, 1PM, 6PM EAT)
+  { path: '/api/cron/replies', label: 'replies', shouldRun: (d) => d.getUTCMinutes() === 0 && [6, 10, 15].includes(d.getUTCHours()) },
 ]
 
 async function runCronJob(job: CronJob, env: Env): Promise<{ label: string; ok: boolean; status?: number; error?: string }> {
