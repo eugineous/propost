@@ -17,7 +17,7 @@ export async function runMigrations(): Promise<void> {
 
   for (const statement of ALL_MIGRATIONS) {
     try {
-      await sql(statement)
+      await sql.query(statement)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[migrate] Failed to execute migration:\n${statement}\nError: ${msg}`)

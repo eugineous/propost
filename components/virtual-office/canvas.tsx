@@ -132,7 +132,7 @@ export default function OfficeCanvas({ onAgentClick }: OfficeCanvasProps) {
     }
 
     // Draw agents
-    for (const sprite of spritesRef.current.values()) {
+    for (const sprite of Array.from(spritesRef.current.values())) {
       drawAgent(ctx, sprite, frame)
 
       // Agent name label
@@ -174,7 +174,7 @@ export default function OfficeCanvas({ onAgentClick }: OfficeCanvasProps) {
     const mx = (e.clientX - rect.left) * scaleX
     const my = (e.clientY - rect.top) * scaleY
 
-    for (const sprite of spritesRef.current.values()) {
+    for (const sprite of Array.from(spritesRef.current.values())) {
       if (mx >= sprite.x - 2 && mx <= sprite.x + 18 && my >= sprite.y - 2 && my <= sprite.y + 20) {
         setSelectedAgent(sprite.name)
         onAgentClick?.(sprite.name)

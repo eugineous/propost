@@ -24,11 +24,14 @@ export async function generateWithGemini(
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey, baseUrl ? { apiEndpoint: baseUrl } : undefined)
+    const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.0-flash',
       ...(systemPrompt ? { systemInstruction: systemPrompt } : {}),
-    })
+    },
+    // Route through CF AI Gateway if configured
+    baseUrl ? { baseUrl } : undefined
+    )
 
     const resultPromise = model.generateContent(prompt)
 

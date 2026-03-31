@@ -21,7 +21,7 @@ export async function verifyWebhook(
 
   if (platform === 'x') {
     // X uses base64-encoded signature
-    const expected = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    const expected = btoa(Array.from(new Uint8Array(sig)).map((b) => String.fromCharCode(b)).join(''))
     return signature === expected || signature === `sha256=${expected}`
   }
 

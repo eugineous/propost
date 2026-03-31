@@ -57,7 +57,7 @@ async function hmacSha1(key: string, data: string): Promise<string> {
     ['sign']
   )
   const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(data))
-  return btoa(String.fromCharCode(...new Uint8Array(sig)))
+  return btoa(Array.from(new Uint8Array(sig)).map((b) => String.fromCharCode(b)).join(''))
 }
 
 export async function signOAuth1(
