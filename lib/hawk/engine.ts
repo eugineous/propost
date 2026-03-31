@@ -13,20 +13,20 @@ export interface RateLimitStatus {
   haltedUntil?: Date
 }
 
-// Per-platform daily limits
+// Per-platform daily limits — raised for high-frequency posting
 const DAILY_LIMITS: Record<Platform, number> = {
-  x: 20,
+  x: 48,        // 2/hour × 24h = 48 max (HAWK will enforce safe spacing)
   instagram: 25,
-  linkedin: 5,
+  linkedin: 20,  // 2/hour during active hours
   facebook: 10,
   website: 9999,
 }
 
-// Per-platform hourly safe thresholds
+// Per-platform hourly safe thresholds — 2 posts/hour for X and LinkedIn
 const HOURLY_SAFE: Record<Platform, number> = {
-  x: 5,
+  x: 2,          // 2 per hour — randomized timing prevents bot detection
   instagram: 4,
-  linkedin: 2,
+  linkedin: 2,   // 2 per hour
   facebook: 3,
   website: 9999,
 }
@@ -151,7 +151,9 @@ export class HAWKEngine {
     if (!last) return
 
     const elapsed = Date.now() - new Date(last).getTime()
-    const minGap = 120_000 // 120 seconds
+    // X and LinkedIn: minimum 20 minutes between posts (human-like pacing)
+    // Other platforms: 120 seconds
+    const minGap = (platform === 'x' || platform === 'linkedin') ? 20 * 60 * 1000 : 120_000
 
     if (elapsed < minGap) {
       const wait = minGap - elapsed
