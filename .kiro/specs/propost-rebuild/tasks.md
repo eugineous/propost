@@ -1,0 +1,613 @@
+# Implementation Plan: ProPost Rebuild
+
+## Overview
+
+Ground-up rebuild of ProPost as a real multi-agent social media operating system. All existing code at the repo root is treated as corrupted and replaced. Implementation proceeds in 9 phases: Foundation → Platform Adapters → Agent Hierarchy → API Routes → Dashboard → Virtual Office → Content Pillar Automation → Property-Based Tests → Deployment Readiness.
+
+Language: TypeScript (Next.js 14 App Router, Vitest, fast-check)
+
+## Tasks
+
+- [x] 1. Wipe and scaffold clean project structure
+  - Delete all existing `agents/`, `app/`, `lib/`, `components/` directories
+  - Scaffold fresh Next.js 14 App Router project with TypeScript strict mode
+  - Install core dependencies: `@neondatabase/serverless`, `@google/generative-ai`, `openai`, `playwright`, `fast-check`, `vitest`, `zod`
+  - Create `lib/`, `lib/agents/`, `lib/ai/`, `lib/platforms/`, `lib/fallback/`, `lib/tasks/`, `lib/memory/`, `lib/hawk/`, `lib/approval/`, `lib/content/`, `lib/db/`, `lib/health/` directory structure
+  - _Requirements: 16.1, 17.5_
+
+- [x] 2. Phase 1 — Foundation: Database schema and migrations
+  - [x] 2.1 Create `lib/db/schema.ts` with all table definitions as Drizzle ORM or raw SQL
+    - Define all 13 tables: `agents`, `companies`, `tasks`, `actions`, `content_queue`, `memory_entries`, `platform_connections`, `analytics_snapshots`, `approval_queue`, `fallback_log`, `conversations`, `content_pillars`, plus indexes
+    - Export TypeScript types inferred from schema
+    - _Requirements: 17.1, 17.2, 17.3_
+  - [x] 2.2 Create `lib/db/migrate.ts` — auto-run migrations on deployment
+    - Apply schema migrations against Neon DB using `DATABASE_URL` env var
+    - Idempotent: safe to run on every cold start
+    - _Requirements: 17.5_
+  - [x] 2.3 Create `lib/db/client.ts` — Neon serverless client with retry wrapper
+    - Export `db` singleton using `@neondatabase/serverless`
+    - Wrap all writes with 3-retry exponential backoff (1s, 2s, 4s)
+    - On final failure emit critical error event; queue writes in memory for up to 5 min
+    - _Requirements: 13.5, 17.4_
+  - [ ]* 2.4 Write property test for DB write retry (Property 19)
+    - **Property 19: DB write failures retry exactly 3 times with exponential backoff**
+    - **Validates: Requirements 13.5**
+  - [ ]* 2.5 Write property test for DB write queue on disconnect (Property 22)
+    - **Property 22: Writes queued during disconnect are flushed on reconnect**
+    - **Validates: Requirements 17.4**
+
+- [x] 3. Phase 1 — Foundation: Startup credential validation
+  - [x] 3.1 Create `lib/startup.ts` — validate all required env vars at initialization
+    - Check `REQUIRED_ENV` per platform: X (4 vars), Instagram (2), Facebook (2), LinkedIn (2), Website (1)
+    - Check `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `DATABASE_URL`
+    - Return `StartupReport` with `missing[]`, `disabled[]`, `healthy` flag
+    - Log each missing var with platform context; disable affected platform tasks
+    - _Requirements: 16.2_
+  - [x] 3.2 Wire `validateStartup()` into Next.js app initialization (instrumentation hook or layout)
+    - _Requirements: 16.2_
+
+- [x] 4. Phase 1 — Foundation: AI Router
+  - [x] 4.1 Create `lib/ai/router.ts` implementing `AIRouter` interface
+    - Route `plan | analyze | summarize | validate` → Gemini 2.0 Flash
+    - Route `draft | generate` → NVIDIA NIM llama-3.1-70b
+    - 10-second timeout per provider; on primary failure switch to alternate
+    - On both failures throw `AIProviderError` → caller handles via Fallback Engine
+    - _Requirements: 2.1, 2.2_
+  - [x] 4.2 Create `lib/ai/gemini.ts` — Gemini 2.0 Flash client wrapper
+    - Use `@google/generative-ai`; read `GEMINI_API_KEY` from env
+    - _Requirements: 2.1_
+  - [x] 4.3 Create `lib/ai/nvidia.ts` — NVIDIA NIM client wrapper
+    - Use OpenAI-compatible SDK pointed at `https://integrate.api.nvidia.com/v1`
+    - Read `NVIDIA_API_KEY` from env
+    - _Requirements: 2.1_
+  - [ ]* 4.4 Write property test for AI router task-type routing (Property 3)
+    - **Property 3: AI Router selects correct provider deterministically by task type**
+    - **Validates: Requirements 2.1**
+  - [ ]* 4.5 Write property test for AI fallback completeness (Property 4)
+    - **Property 4: Primary AI failure triggers alternate; both failures → approval queue**
+    - **Validates: Requirements 2.2, 2.3**
+
+- [x] 5. Phase 1 — Foundation: Base Agent, Logger, Memory
+  - [x] 5.1 Create `lib/agents/base.ts` — abstract `BaseAgent` class implementing `Agent` interface
+    - Fields: `name`, `tier`, `company`, `status`
+    - Methods: `execute(task)`, `receiveMessage(msg)`, `heartbeat()`
+    - `heartbeat()` writes `last_heartbeat` to `agents` table every 60s
+    - All unhandled errors caught, logged via Logger, status set to `error`, SOVEREIGN notified
+    - _Requirements: 3.1, 22.3_
+  - [x] 5.2 Create `lib/tasks/orchestrator.ts` — `TaskOrchestrator` implementation
+    - `createTask`, `assignTask`, `updateStatus`, `getActiveTasks`
+    - Persist every task to `tasks` table; emit SSE event on status change
+    - _Requirements: 3.4, 3.6, 18.2_
+  - [x] 5.3 Create `lib/logger.ts` — structured logger writing to `actions` table
+    - `logAction(action)` — persists to `actions` with all required fields
+    - Never silently discard; on DB failure use retry wrapper from `lib/db/client.ts`
+    - _Requirements: 1.2, 17.1_
+  - [x] 5.4 Create `lib/memory/store.ts` — `MemorySystem` implementation
+    - `store`, `retrieve`, `search`, `export` methods
+    - Persist to `memory_entries` table; support filter by agent, platform, date, keyword
+    - _Requirements: 9.3, 9.5_
+  - [ ]* 5.5 Write property test for memory persistence round-trip (Property 11)
+    - **Property 11: Memory entries are retrievable by agent name and creation date**
+    - **Validates: Requirements 9.3, 9.5**
+  - [ ]* 5.6 Write property test for agent active status invariant (Property 9)
+    - **Property 9: Agent with active task must have status = active in DB**
+    - **Validates: Requirements 3.7**
+
+- [x] 6. Checkpoint — Phase 1 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 7. Phase 2 — Platform Adapters: X and Instagram
+  - [x] 7.1 Create `lib/platforms/x.ts` — `XAdapter` implementing `PlatformAdapter`
+    - `post`, `reply`, `getMetrics`, `verifyCredentials` using X API v2
+    - OAuth 2.0 Bearer + User Token from env vars
+    - Return real `platform_post_id` on success; throw `PlatformAPIError` on failure
+    - _Requirements: 1.1, 4.1, 4.6_
+  - [x] 7.2 Create `lib/platforms/instagram.ts` — `InstagramAdapter`
+    - Instagram Graph API with Page Access Token
+    - Support `post`, `reel_publish`, `story_publish`, `reply`, `getMetrics`
+    - Retry media upload up to 3 times with exponential backoff on upload error
+    - _Requirements: 1.1, 6.1, 6.2, 6.3, 6.5_
+  - [ ]* 7.3 Write property test for no mock success (Property 1)
+    - **Property 1: Successful actions always have a real non-null platform_post_id**
+    - **Validates: Requirements 1.1, 1.2, 1.5**
+
+- [x] 8. Phase 2 — Platform Adapters: Facebook, LinkedIn, Website
+  - [x] 8.1 Create `lib/platforms/facebook.ts` — `FacebookAdapter`
+    - Facebook Graph API with Page Access Token
+    - Enforce 30-minute minimum gap between posts (check `actions` table before posting)
+    - _Requirements: 1.1, 7.1, 7.5_
+  - [x] 8.2 Create `lib/platforms/linkedin.ts` — `LinkedInAdapter`
+    - LinkedIn API v2 with OAuth 2.0
+    - Enforce max 100 connection requests/day; detect token expiry and alert Founder
+    - _Requirements: 1.1, 5.1, 5.4, 5.5_
+  - [x] 8.3 Create `lib/platforms/website.ts` — `WebsiteAdapter`
+    - Vercel Deploy Hook API for blog publishing
+    - _Requirements: 8.1_
+  - [x] 8.4 Create `lib/platforms/index.ts` — registry mapping `Platform` → adapter instance
+    - _Requirements: 1.1_
+
+- [x] 9. Phase 2 — HAWK Anti-Ban Engine
+  - [x] 9.1 Create `lib/hawk/engine.ts` — `HAWKEngine` implementation
+    - `checkRateLimit`, `recordAction`, `getDelay`, `enforceMinGap`, `haltPlatform`
+    - Per-platform daily limits: X=20, Instagram=25, LinkedIn=5, Facebook=10
+    - Per-platform hourly safe thresholds: X=5, Instagram=4, LinkedIn=2, Facebook=3
+    - `getDelay` returns random value 30,000–300,000ms
+    - `enforceMinGap` ensures ≥ 120s between consecutive same-platform actions
+    - On threshold breach: halt platform ≥ 1 hour, emit Dashboard alert
+    - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
+  - [ ]* 9.2 Write property test for anti-ban delay bounds (Property 14)
+    - **Property 14: Execution timestamp is 30s–300s after scheduled trigger time**
+    - **Validates: Requirements 11.1**
+  - [ ]* 9.3 Write property test for consecutive action gap (Property 15)
+    - **Property 15: Two consecutive same-platform actions are ≥ 120s apart**
+    - **Validates: Requirements 11.2**
+  - [ ]* 9.4 Write property test for rate limit enforcement (Property 16)
+    - **Property 16: HAWK blocks all new successes once hourly threshold is reached**
+    - **Validates: Requirements 11.3, 11.4**
+
+- [x] 10. Phase 2 — Fallback Engine with Playwright
+  - [x] 10.1 Create `lib/fallback/engine.ts` — `FallbackEngine` implementation
+    - `handlePlatformFailure`: attempt Playwright automation; on failure → Approval Queue
+    - `handleAIFailure`: switch provider; on both fail → Approval Queue with prompt
+    - `handleDBFailure`: retry 3× with backoff; on final fail → critical Dashboard alert
+    - Write entry to `fallback_log` for every failure with all required fields
+    - _Requirements: 1.3, 1.4, 13.1, 13.2, 13.3, 13.4, 13.5, 13.6_
+  - [x] 10.2 Create `lib/fallback/playwright.ts` — Playwright browser automation wrapper
+    - Sandboxed Chromium; human-like typing (50–150ms random keystroke delays)
+    - _Requirements: 1.3, 13.1_
+  - [ ]* 10.3 Write property test for platform fallback completeness (Property 2)
+    - **Property 2: Platform API failure always produces a fallback_log entry before failed/queued**
+    - **Validates: Requirements 1.3, 1.4, 13.1**
+  - [ ]* 10.4 Write property test for no silent failures (Property 20)
+    - **Property 20: Every task reaching terminal failed state has a fallback_log entry**
+    - **Validates: Requirements 13.6**
+
+- [x] 11. Checkpoint — Phase 2 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 12. Phase 3 — Agent Hierarchy: SOVEREIGN and CEO Agents
+  - [x] 12.1 Create `lib/agents/sovereign.ts` — SOVEREIGN (Tier 1, IntelCore)
+    - `execute(task)`: parse Founder command intent, identify target companies, dispatch tasks to CEO agents within 3s
+    - `receiveMessage(msg)`: interpret as strategic command, return structured action plan
+    - Delegate to CEO agents via `TaskOrchestrator.createTask` + `assignTask`
+    - _Requirements: 3.1, 3.2, 14.7, 21.2_
+  - [x] 12.2 Create `lib/agents/ceo/zara.ts` — ZARA (XForce CEO, Tier 2)
+    - Decompose tasks into sub-tasks assigned to XForce Tier 3 agents
+    - Report completion to SOVEREIGN; respond to Founder messages with company status
+    - _Requirements: 3.3, 4.1, 21.3_
+  - [x] 12.3 Create `lib/agents/ceo/nova.ts` — NOVA (LinkedElite CEO, Tier 2)
+    - _Requirements: 3.3, 5.1, 21.3_
+  - [x] 12.4 Create `lib/agents/ceo/aurora.ts` — AURORA (GramGod CEO, Tier 2)
+    - _Requirements: 3.3, 6.1, 21.3_
+  - [x] 12.5 Create `lib/agents/ceo/chief.ts` — CHIEF (PagePower CEO, Tier 2)
+    - _Requirements: 3.3, 7.1, 21.3_
+  - [x] 12.6 Create `lib/agents/ceo/root.ts` — ROOT (WebBoss CEO, Tier 2)
+    - _Requirements: 3.3, 8.1, 21.3_
+  - [x] 12.7 Create `lib/agents/ceo/oracle.ts` — ORACLE (IntelCore CEO, Tier 2)
+    - `generateStrategicBrief`: cross-platform summary with top content, growth metrics, risk flags, next actions
+    - Aggregate analytics from all CEO agents; generate weekly report
+    - _Requirements: 3.3, 9.1, 9.6, 21.3_
+  - [ ]* 12.8 Write property test for CEO task decomposition (Property 7)
+    - **Property 7: CEO task always produces ≥1 sub-task with correct parent_task_id**
+    - **Validates: Requirements 3.3**
+  - [ ]* 12.9 Write property test for task status propagation (Property 8)
+    - **Property 8: All sub-tasks completed → parent task status = completed**
+    - **Validates: Requirements 3.4, 3.5**
+
+- [x] 13. Phase 3 — Agent Hierarchy: Operational Agents (Tier 3)
+  - [x] 13.1 Create XForce Tier 3 agents in `lib/agents/xforce/`
+    - `post-executor.ts`: publish posts/threads to X via XAdapter; enforce 2s delay between thread parts
+    - `reply-specialist.ts`: draft replies, route through QC pipeline, submit to Approval Queue if followers < 10k
+    - `trend-analyst.ts`: detect trending topics, score relevance, notify ZARA within 60s
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+  - [x] 13.2 Create LinkedElite Tier 3 agents in `lib/agents/linkedelite/`
+    - `content-creator.ts`: generate professional posts and articles aligned with active Content Pillar
+    - `networking-agent.ts`: draft connection messages, submit to Approval Queue before sending
+    - _Requirements: 5.1, 5.2, 5.3_
+  - [x] 13.3 Create GramGod Tier 3 agents in `lib/agents/gramgod/`
+    - `caption-agent.ts`: generate captions with hashtag blocks
+    - `reel-agent.ts`: publish reels via Instagram Graph API
+    - `story-agent.ts`: publish stories within 2 min of scheduled time
+    - `dm-handler.ts`: classify DMs (brand inquiry / fan / spam), generate replies for non-spam → Approval Queue
+    - _Requirements: 6.1, 6.2, 6.3, 6.4_
+  - [x] 13.4 Create PagePower Tier 3 agents in `lib/agents/pagepower/`
+    - `content-creator.ts`: generate Facebook posts with community-oriented framing
+    - `community-agent.ts`: classify comments (positive/neutral/negative/spam), generate replies → Approval Queue
+    - `analytics-agent.ts`: detect posts with >50 reactions in 1h, notify SOVEREIGN and CHIEF
+    - _Requirements: 7.1, 7.2, 7.3_
+  - [x] 13.5 Create WebBoss Tier 3 agents in `lib/agents/webboss/`
+    - `build-agent.ts`: publish blog posts via Vercel Deploy Hook
+    - `seo-agent.ts`: generate meta title, description, structured data for new posts; run full SEO audit every 7 days
+    - `speed-agent.ts`: alert ROOT and SOVEREIGN when response time > 3s for 3 consecutive checks
+    - `shield-agent.ts`: alert ROOT and SOVEREIGN on security vulnerability detection
+    - `crawl-agent.ts`: perform SEO audit, store results in Neon DB
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+  - [x] 13.6 Create IntelCore Tier 3 agents in `lib/agents/intelcore/`
+    - `trend-analyst.ts`: assess trend relevance to all 10 pillars, distribute brief to CEO agents within 5 min
+    - `memory-agent.ts`: record significant action context and learned patterns to Memory Store
+    - `risk-analyzer.ts`: block high-risk actions (mass unfollow, bulk DM, account deletion), require Founder approval
+    - _Requirements: 9.2, 9.3, 9.4_
+
+- [x] 14. Phase 3 — Agent Hierarchy: Control and System Agents
+  - [x] 14.1 Create `lib/agents/control/qc-agent.ts` — QC_Agent (Tier 4)
+    - Review generated content for quality before publishing
+    - Must be invoked after Tone_Validator in pipeline
+    - _Requirements: 2.5_
+  - [x] 14.2 Create `lib/agents/control/tone-validator.ts` — Tone_Validator (Tier 4)
+    - Validate content against Founder voice profile: authority-driven, culturally grounded, storytelling-forward, em dashes, no AI filler
+    - On rejection: trigger AI Router regeneration up to 2 additional times; on 3rd failure → Approval Queue
+    - Must execute before QC_Agent in pipeline
+    - _Requirements: 2.5, 2.6, 10.6_
+  - [x] 14.3 Create `lib/agents/control/approval-gate.ts` — Approval_Gate (Tier 4)
+    - Route actions with `risk_score > 60` to Approval Queue
+    - On Founder approval: release task to executing agent within 10s
+    - On Founder rejection: cancel task, notify originating agent with reason
+    - On Founder edit: replace content before releasing
+    - _Requirements: 12.2, 12.3, 12.4_
+  - [x] 14.4 Create `lib/health/monitor.ts` — Health_Monitor (Tier 5)
+    - Check all platform API connections every 5 min; update `platform_connections` table
+    - Mark platform degraded after 3 consecutive failures; emit Dashboard alert
+    - Mark agent `unresponsive` if no heartbeat or task completion in 10 min
+    - Check Neon DB connectivity every 2 min; alert Founder if unavailable > 5 min
+    - _Requirements: 22.1, 22.2, 22.3, 22.4_
+  - [x] 14.5 Create `lib/analytics/engine.ts` — Analytics_Engine (Tier 5)
+    - Pull engagement metrics from each platform API every 24h; store in `analytics_snapshots`
+    - Identify top 3 performing posts per platform per week
+    - Flag underperforming posts (< 10% of platform average engagement rate)
+    - Track follower growth rate per platform per week
+    - _Requirements: 20.1, 20.3, 20.4, 20.5_
+  - [ ]* 14.6 Write property test for content pipeline ordering (Property 5)
+    - **Property 5: Tone_Validator always executes before QC_Agent in the pipeline**
+    - **Validates: Requirements 2.5**
+  - [ ]* 14.7 Write property test for tone rejection retry limit (Property 6)
+    - **Property 6: Tone rejection triggers at most 2 regeneration retries before Approval Queue**
+    - **Validates: Requirements 2.6**
+  - [ ]* 14.8 Write property test for risk gate enforcement (Property 10)
+    - **Property 10: Actions with risk_score > 60 require approval_queue entry before execution**
+    - **Validates: Requirements 9.4, 12.6**
+  - [ ]* 14.9 Write property test for agent unresponsive detection (Property 25)
+    - **Property 25: Agent with no heartbeat for > 10 min is marked unresponsive**
+    - **Validates: Requirements 22.3**
+  - [ ]* 14.10 Write property test for analytics persistence round-trip (Property 24)
+    - **Property 24: Analytics pulls are stored with all required fields and are retrievable**
+    - **Validates: Requirements 20.1**
+
+- [x] 15. Checkpoint — Phase 3 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 16. Phase 4 — API Routes: Command endpoint and SSE streams
+  - [x] 16.1 Create `app/api/command/route.ts` — POST handler routing to SOVEREIGN
+    - Parse `{ message: string }` body; call `SOVEREIGN.execute(task)`
+    - Return `{ taskId, plan, dispatchedTo[] }` within 5s
+    - _Requirements: 3.2, 14.7_
+  - [x] 16.2 Create `app/api/activity/route.ts` — SSE stream of `ActivityEvent`
+    - Stream last 100 real actions from `actions` table on connect
+    - Push new events within 5s of action confirmation
+    - _Requirements: 1.6, 14.1_
+  - [x] 16.3 Create `app/api/agents/status/route.ts` — SSE stream of `AgentStatusEvent[]`
+    - Stream current status of all agents; push updates on status change
+    - _Requirements: 3.7, 14.3_
+  - [x] 16.4 Create `app/api/agents/[name]/message/route.ts` — POST Founder → Agent DM
+    - Route message to named agent's `receiveMessage` handler
+    - Return real AI-generated response within 10s; persist to `conversations` table
+    - _Requirements: 21.1, 21.4_
+
+- [x] 17. Phase 4 — API Routes: Approval, Tasks, Content, Analytics, Memory
+  - [x] 17.1 Create `app/api/approve/[id]/route.ts` — POST approve queue item
+    - Accept optional `{ editedContent }` body
+    - Release task to executing agent within 10s; update queue item to `approved`
+    - _Requirements: 12.2, 12.4_
+  - [x] 17.2 Create `app/api/reject/[id]/route.ts` — POST reject queue item
+    - Accept `{ reason }` body; cancel task; notify originating agent
+    - Update queue item to `rejected`
+    - _Requirements: 12.3_
+  - [x] 17.3 Create `app/api/tasks/route.ts` — GET tasks with filters
+    - Query params: `company`, `agent`, `status`, `platform`
+    - Return `Task[]` from `tasks` table
+    - _Requirements: 3.6, 14.4_
+  - [x] 17.4 Create `app/api/content/calendar/route.ts` — GET content calendar
+    - Query params: `from`, `to` (ISO dates)
+    - Return `ContentQueueItem[]` for date range
+    - _Requirements: 14.5, 18.5_
+  - [x] 17.5 Create `app/api/analytics/summary/route.ts` — GET analytics summary
+    - Query params: `platform`, `period` (7d/30d/90d)
+    - Return real metrics from `analytics_snapshots` — never mocked
+    - _Requirements: 20.2_
+  - [x] 17.6 Create `app/api/memory/route.ts` — GET memory entries with filters
+    - Query params: `agent`, `platform`, `keyword`, `from`, `to`
+    - Return `MemoryEntry[]` from `memory_entries` table
+    - _Requirements: 9.5, 14.9_
+  - [x] 17.7 Create `app/api/connections/route.ts` — GET platform connection statuses
+    - Return `PlatformConnection[]` from `platform_connections` — no raw credential values
+    - _Requirements: 16.3_
+  - [ ]* 17.8 Write property test for approval queue field completeness (Property 17)
+    - **Property 17: All approval_queue items have non-null required fields**
+    - **Validates: Requirements 12.1**
+  - [ ]* 17.9 Write property test for approval gate state transitions (Property 18)
+    - **Property 18: Approve → task active + item approved; Reject → task cancelled + item rejected**
+    - **Validates: Requirements 12.2, 12.3**
+
+- [x] 18. Phase 4 — API Routes: Webhooks with HMAC verification
+  - [x] 18.1 Create `app/api/webhooks/x/route.ts` — X webhook handler
+    - Verify `x-twitter-webhooks-signature` using HMAC-SHA256 with consumer secret
+    - On invalid signature: return 403, log with source IP, discard payload
+    - On valid: route DM events to XForce DM handler, mention events to reply-specialist
+    - _Requirements: 19.1, 19.2, 19.3, 19.5_
+  - [x] 18.2 Create `app/api/webhooks/instagram/route.ts` — Instagram webhook handler
+    - Verify `x-hub-signature-256` using SHA256 HMAC with app secret
+    - Route DM events to GramGod dm-handler within 5s
+    - _Requirements: 19.1, 19.2, 19.3, 19.5_
+  - [x] 18.3 Create `app/api/webhooks/facebook/route.ts` — Facebook webhook handler
+    - Verify `x-hub-signature-256` using SHA256 HMAC with app secret
+    - Route comment events to PagePower community-agent within 5s
+    - _Requirements: 19.1, 19.2, 19.4, 19.5_
+  - [x] 18.4 Create `lib/webhooks/verify.ts` — shared `verifyWebhook` utility
+    - Cloudflare Worker compatible (no Node.js-only APIs); use Web Crypto API
+    - _Requirements: 19.1_
+  - [ ]* 18.5 Write property test for webhook signature verification (Property 23)
+    - **Property 23: Invalid signature → 403 + no task/action created; valid → payload processed**
+    - **Validates: Requirements 19.1, 19.2**
+
+- [x] 19. Phase 4 — API Routes: Cron endpoints
+  - [x] 19.1 Create `app/api/cron/ai-news/route.ts` — POST handler for AI News cron
+    - Triggered at 03:00, 09:00, 15:00, 21:00 UTC (06:00, 12:00, 18:00, 00:00 EAT)
+    - Create `post_content` tasks for all active platforms; assign to relevant CEO agents within 10s
+    - Log missed trigger if task not started within 60s; attempt immediate execution
+    - _Requirements: 10.3, 18.1, 18.2, 18.3, 18.4_
+  - [x] 19.2 Create `app/api/cron/analytics/route.ts` — POST handler for daily analytics pull
+    - Triggered daily at 02:00 UTC; invoke Analytics_Engine for all platforms
+    - _Requirements: 20.1_
+  - [x] 19.3 Create `app/api/cron/health/route.ts` — POST handler for health checks
+    - Triggered every 5 min; invoke Health_Monitor for all platform connections
+    - _Requirements: 22.1_
+  - [x] 19.4 Create `app/api/cron/content-schedule/route.ts` — POST handler for content queue
+    - Triggered every 15 min; query `content_queue` for items due within next 15 min
+    - Create tasks for due items; assign to CEO agents
+    - _Requirements: 18.1, 18.2_
+
+- [x] 20. Checkpoint — Phase 4 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 21. Phase 5 — Dashboard: Layout and Empire Overview
+  - [x] 21.1 Create `app/layout.tsx` — root layout with global styles and SSE context provider
+    - Provide `ActivityContext` and `AgentStatusContext` via React context
+    - Connect SSE streams on mount
+    - _Requirements: 14.1, 14.3_
+  - [x] 21.2 Create `app/page.tsx` — Empire Overview (home page)
+    - Company Map: 6 companies with CEO agent status badge and active task count
+    - Real-time Activity Feed: last 100 actions with platform icon, agent name, content preview, timestamp
+    - Platform status indicators: API connection health for X, Instagram, Facebook, LinkedIn, Website
+    - Command input: text field that POSTs to `/api/command` and displays SOVEREIGN response
+    - _Requirements: 14.1, 14.2, 14.6, 14.7_
+
+- [x] 22. Phase 5 — Dashboard: Monitor, Tasks, Content Calendar
+  - [x] 22.1 Create `app/monitor/page.tsx` — Agent Monitor
+    - Agent Roster: every agent with status badge (active/idle/paused/error), current task, last action time
+    - System health panel: platform connections, AI providers, DB, cron triggers with last-checked timestamps
+    - _Requirements: 14.3, 22.5_
+  - [x] 22.2 Create `app/tasks/page.tsx` — Task Board
+    - Filterable by company, agent, platform, status
+    - Columns: queued, assigned, active, pending_approval, completed, failed
+    - Real-time updates via SSE
+    - _Requirements: 3.6, 14.4_
+  - [x] 22.3 Create `app/content/page.tsx` — Content Calendar
+    - 30-day calendar view of scheduled content across all platforms
+    - Allow Founder to add, edit, reschedule, cancel items (POST/PATCH/DELETE to content queue API)
+    - _Requirements: 14.5, 18.5_
+
+- [x] 23. Phase 5 — Dashboard: Inbox, Analytics, Memory, Settings
+  - [x] 23.1 Create `app/inbox/page.tsx` — Approval Inbox
+    - List all pending Approval Queue items sorted by urgency and age
+    - Each item shows: action type, platform, agent, content preview, risk level, timestamp
+    - Approve / Reject / Edit actions with immediate feedback
+    - _Requirements: 12.1, 14.8_
+  - [x] 23.2 Create `app/analytics/page.tsx` — Analytics Dashboard
+    - Real metrics from `analytics_snapshots` — never mocked
+    - Per-platform: impressions, likes, comments, shares, follower count
+    - Top 3 performing posts per platform per week
+    - Follower growth trend line per platform
+    - _Requirements: 20.2, 20.3, 20.5_
+  - [x] 23.3 Create `app/memory/page.tsx` — Memory Browser
+    - Search and filter memory entries by agent, date, platform, keyword
+    - Export functionality
+    - _Requirements: 9.5, 14.9_
+  - [x] 23.4 Create `app/settings/page.tsx` — Settings and Connections
+    - Connections panel: platform credential status (present/valid/active) — no raw values shown
+    - Approval Queue 24h reminder display
+    - _Requirements: 16.3, 16.5, 12.5_
+
+- [x] 24. Checkpoint — Phase 5 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 25. Phase 6 — Virtual Office: Canvas 2D room layout
+  - [x] 25.1 Create `components/virtual-office/canvas.tsx` — main Canvas 2D component
+    - 6-room grid (2 rows × 3 cols): War Room, Studio, Boardroom, Community Hall, Engine Room, Situation Room
+    - Room positions, colors, and labels from `VirtualOffice` interface
+    - `render(ctx)` draws room backgrounds, borders, labels
+    - _Requirements: 15.1_
+  - [x] 25.2 Create `components/virtual-office/rooms.ts` — room layout constants
+    - Define `Room` objects for all 6 companies with position, color, label
+    - _Requirements: 15.1_
+
+- [x] 26. Phase 6 — Virtual Office: Pixel sprites and animation
+  - [x] 26.1 Create `components/virtual-office/sprites.ts` — sprite system
+    - 16×16 px sprites, 4 frames per state (idle, working, walking, alert), 150ms per frame
+    - `AgentSprite` class with `state`, `position`, `animate(ctx, frame)` method
+    - Original ProPost visual identity — no third-party character libraries
+    - _Requirements: 15.2, 15.3, 15.5_
+  - [x] 26.2 Create sprite pixel art assets in `public/sprites/` for each CEO agent
+    - ZARA, NOVA, AURORA, CHIEF, ROOT, ORACLE — 4 states × 4 frames each
+    - _Requirements: 15.5_
+
+- [x] 27. Phase 6 — Virtual Office: SSE-driven state and interaction
+  - [x] 27.1 Wire agent status SSE stream to sprite state updates
+    - On `AgentStatusEvent`: call `updateAgentState(agentName, state)` on canvas
+    - Map agent status → sprite state: `active` → `working`, `idle` → `idle`, `error` → `alert`
+    - _Requirements: 15.2, 15.3_
+  - [x] 27.2 Implement room highlight on new action
+    - On new `ActivityEvent`: call `highlightRoom(company, 2000)` to briefly highlight responsible room
+    - _Requirements: 15.6_
+  - [x] 27.3 Implement agent click → side panel
+    - `onAgentClick` callback opens side panel showing: current task, recent memory entries, last 10 actions, status
+    - Fetch data from `/api/agents/[name]` on click
+    - _Requirements: 15.4_
+  - [x] 27.4 Integrate Virtual Office canvas into Empire Overview page (`app/page.tsx`)
+    - _Requirements: 15.1_
+
+- [x] 28. Checkpoint — Phase 6 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+
+- [x] 29. Phase 7 — Content Pillar Automation: Seed data and scheduling
+  - [x] 29.1 Create `lib/content/pillars.ts` — 10 content pillar definitions
+    - Define all 10 pillars: ai_news, youth_empowerment, trending_topics, elite_conversations, kenyan_entertainment, fashion, media_journalism, personal_story, entrepreneurship, culture_identity
+    - Include `PILLAR_SCHEDULES` with cron expressions per pillar
+    - AI News: 4×/day at 03:00, 09:00, 15:00, 21:00 UTC
+    - _Requirements: 10.1, 10.3, 18.3_
+  - [x] 29.2 Create `lib/db/seed.ts` — seed `content_pillars` table with all 10 pillars
+    - Idempotent upsert; run as part of migration
+    - _Requirements: 10.1_
+  - [x] 29.3 Create `lib/content/formatter.ts` — platform-specific formatting enforcement
+    - X: truncate/validate ≤ 280 characters
+    - Instagram: append hashtag block if missing
+    - LinkedIn: enforce professional long-form ≥ 150 characters
+    - Facebook: apply community-oriented framing
+    - _Requirements: 10.5_
+  - [ ]* 29.4 Write property test for content pillar tagging invariant (Property 12)
+    - **Property 12: Every content_queue item has exactly one valid pillar slug**
+    - **Validates: Requirements 10.1, 10.2**
+  - [ ]* 29.5 Write property test for platform formatting constraints (Property 13)
+    - **Property 13: X ≤ 280 chars, Instagram has hashtags, LinkedIn ≥ 150 chars**
+    - **Validates: Requirements 10.5**
+
+- [x] 30. Phase 7 — Content Pillar Automation: AI News sourcing and calendar integration
+  - [x] 30.1 Create `lib/content/ai-news-source.ts` — real-time AI news feed integration
+    - Source topics from a live news API or trend signal (not a static list)
+    - Return topic with headline, source URL, relevance score
+    - _Requirements: 10.4_
+  - [x] 30.2 Wire AI News cron (`/api/cron/ai-news`) to content formatter and platform adapters
+    - On trigger: source topic → generate content via AI Router → format per platform → create tasks → assign to CEO agents
+    - _Requirements: 10.3, 10.4, 18.3_
+  - [x] 30.3 Wire content calendar UI to `content_queue` table
+    - Add/edit/reschedule/cancel items via PATCH/DELETE on `/api/content/calendar`
+    - _Requirements: 18.5_
+
+- [x] 31. Checkpoint — Phase 7 complete
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 32. Phase 8 — Property-Based Tests: Core infrastructure properties
+  - [x] 32.1 Create `lib/platforms/__tests__/adapters.property.test.ts`
+    - Implement P1: successful actions always have real non-null platform_post_id
+    - Implement P2: platform API failure always produces fallback_log entry
+    - _Requirements: 1.1, 1.2, 1.3, 1.5_
+  - [x] 32.2 Create `lib/ai/__tests__/router.property.test.ts`
+    - Implement P3: AI Router selects correct provider by task type
+    - Implement P4: AI failure triggers alternate then approval queue
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 32.3 Create `lib/agents/__tests__/pipeline.property.test.ts`
+    - Implement P5: Tone_Validator executes before QC_Agent
+    - Implement P6: Tone rejection retries ≤ 2 before Approval Queue
+    - _Requirements: 2.5, 2.6_
+  - [x] 32.4 Create `lib/tasks/__tests__/orchestrator.property.test.ts`
+    - Implement P7: CEO task produces ≥1 sub-task with correct parent_task_id
+    - Implement P8: all sub-tasks completed → parent completed
+    - Implement P9: agent with active task has status = active
+    - _Requirements: 3.3, 3.4, 3.5, 3.7_
+
+- [x] 33. Phase 8 — Property-Based Tests: Control, content, and compliance properties
+  - [x] 33.1 Create `lib/approval/__tests__/gate.property.test.ts`
+    - Implement P10: risk_score > 60 requires approval_queue entry before execution
+    - Implement P17: approval_queue items have all required non-null fields
+    - Implement P18: approve/reject produce correct state transitions
+    - _Requirements: 9.4, 12.1, 12.2, 12.3, 12.6_
+  - [x] 33.2 Create `lib/memory/__tests__/memory.property.test.ts`
+    - Implement P11: memory entries retrievable by agent name and creation date
+    - _Requirements: 9.3, 9.5_
+  - [x] 33.3 Create `lib/content/__tests__/pillar.property.test.ts`
+    - Implement P12: content always has exactly one valid pillar slug
+    - Implement P13: platform formatting constraints hold for all content
+    - _Requirements: 10.1, 10.2, 10.5_
+  - [x] 33.4 Create `lib/hawk/__tests__/hawk.property.test.ts`
+    - Implement P14: execution delay is within 30s–300s bounds
+    - Implement P15: consecutive same-platform actions ≥ 120s apart
+    - Implement P16: HAWK blocks new successes after hourly threshold reached
+    - _Requirements: 11.1, 11.2, 11.3, 11.4_
+
+- [x] 34. Phase 8 — Property-Based Tests: Persistence and infrastructure properties
+  - [x] 34.1 Create `lib/fallback/__tests__/fallback.property.test.ts`
+    - Implement P19: DB write failures retry exactly 3 times with exponential backoff
+    - Implement P20: every failed task has a fallback_log entry
+    - _Requirements: 13.5, 13.6_
+  - [x] 34.2 Create `lib/db/__tests__/persistence.property.test.ts`
+    - Implement P21: actions persisted with all required fields; successful actions have platform_post_id
+    - Implement P22: writes queued during DB disconnect are flushed on reconnect
+    - _Requirements: 17.1, 17.4_
+  - [x] 34.3 Create `lib/webhooks/__tests__/verification.property.test.ts`
+    - Implement P23: invalid webhook signature → 403 + no task/action created
+    - _Requirements: 19.1, 19.2_
+  - [x] 34.4 Create `lib/analytics/__tests__/analytics.property.test.ts`
+    - Implement P24: analytics pulls stored with all required fields and retrievable
+    - _Requirements: 20.1_
+  - [x] 34.5 Create `lib/health/__tests__/monitor.property.test.ts`
+    - Implement P25: agent with no heartbeat > 10 min is marked unresponsive
+    - _Requirements: 22.3_
+
+- [x] 35. Checkpoint — Phase 8 complete
+  - Run `vitest --run` and ensure all 25 property tests pass, ask the user if questions arise.
+
+
+- [x] 36. Phase 9 — Deployment Readiness: Vercel configuration
+  - [x] 36.1 Create `vercel.json` with cron job configuration
+    - `/api/cron/ai-news` → `0 3,9,15,21 * * *` (UTC)
+    - `/api/cron/analytics` → `0 2 * * *`
+    - `/api/cron/health` → `*/5 * * * *`
+    - `/api/cron/content-schedule` → `*/15 * * * *`
+    - _Requirements: 18.1_
+  - [x] 36.2 Create `lib/db/migrations/` directory with numbered SQL migration files
+    - `001_initial_schema.sql` — all 13 tables
+    - `002_indexes.sql` — performance indexes on foreign keys and common query columns
+    - _Requirements: 17.5_
+
+- [x] 37. Phase 9 — Deployment Readiness: Cloudflare Worker webhook proxy
+  - [x]* 37.1 Create `cloudflare/webhook-proxy/index.ts` — Cloudflare Worker for webhook routing
+    - Receive webhook requests from X, Instagram, Facebook
+    - Verify HMAC signatures using Web Crypto API (no Node.js APIs)
+    - Forward verified payloads to Next.js webhook routes
+    - Return 403 immediately on signature failure
+    - _Requirements: 19.1, 19.2_
+  - [x]* 37.2 Create `cloudflare/webhook-proxy/wrangler.toml` — Cloudflare Worker config
+    - Route configuration for `/webhooks/*`
+    - _Requirements: 19.1_
+
+- [x] 38. Phase 9 — Deployment Readiness: Environment variable documentation
+  - [x] 38.1 Create `.env.example` with all required environment variables documented
+    - Group by platform: X (4 vars), Instagram (2), Facebook (2), LinkedIn (2), Website (1)
+    - AI providers: `GEMINI_API_KEY`, `NVIDIA_API_KEY`
+    - Database: `DATABASE_URL`
+    - Webhook secrets: `X_WEBHOOK_SECRET`, `INSTAGRAM_APP_SECRET`, `FACEBOOK_APP_SECRET`
+    - Internal: `CRON_SECRET` for securing cron endpoints
+    - _Requirements: 16.1, 16.2_
+  - [x] 38.2 Add `CRON_SECRET` bearer token check to all `/api/cron/*` route handlers
+    - Reject requests without valid `Authorization: Bearer <CRON_SECRET>` header
+    - _Requirements: 16.1_
+
+- [x] 39. Final checkpoint — Full system integration
+  - Ensure all tests pass (`vitest --run`)
+  - Verify startup validation logs correctly for missing env vars
+  - Verify all 25 property tests pass
+  - Ask the user if questions arise.
+
+## Notes
+
+- Tasks marked with `*` are optional and can be skipped for a faster MVP
+- Each task references specific requirements for traceability
+- Checkpoints ensure incremental validation at the end of each phase
+- Property tests (P1–P25) validate universal correctness properties from the design document
+- The existing codebase at the repo root is treated as corrupted — all files in `agents/`, `app/`, `lib/`, `components/` should be deleted and replaced in Task 1
+- All AI content generation must use real Gemini 2.0 Flash or NVIDIA NIM llama-3.1-70b — no hardcoded strings
+- All platform posts must return a real `platform_post_id` — never a locally generated UUID or mock value
+- HAWK rate limits must be enforced before any platform action executes

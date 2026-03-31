@@ -1,173 +1,151 @@
-// ============================================================
-// ProPost Empire — LinkedIn API Wrapper
-// ============================================================
+// LinkedInAdapter — LinkedIn API v2 platform adapter
+// Detects token expiry (401) and throws PlatformAPIError with statusCode 401
 
-import { withRetry } from './retry'
-import { cleanEnvValue } from '@/lib/env'
-import { getToken } from '@/lib/platforms/token'
+import type { Platform } from '../types'
+import { PlatformAPIError } from '../errors'
+import type { PlatformAdapter, PostContent, PlatformPostResult, PostMetrics } from './x'
 
-const BASE_URL = 'https://api.linkedin.com/v2'
+const LI_BASE = 'https://api.linkedin.com/v2'
 
-async function authHeaders(): Promise<HeadersInit> {
-  let token: string
-  try { token = await getToken('linkedin') } catch {
-    token = cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)
-  }
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-    'X-Restli-Protocol-Version': '2.0.0',
-  }
-}
+export class LinkedInAdapter implements PlatformAdapter {
+  readonly platform: Platform = 'linkedin'
 
-async function liFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: { ...(await authHeaders()), ...(options.headers ?? {}) },
-  })
-
-  if (res.status === 429) {
-    await new Promise((r) => setTimeout(r, 3600000))
-    throw new Error('LinkedIn API rate limit hit (429)')
+  private get accessToken(): string {
+    const v = process.env.LINKEDIN_ACCESS_TOKEN
+    if (!v) throw new Error('LINKEDIN_ACCESS_TOKEN not set')
+    return v
   }
 
-  return res
-}
+  private get personUrn(): string {
+    const v = process.env.LINKEDIN_PERSON_URN
+    if (!v) throw new Error('LINKEDIN_PERSON_URN not set')
+    return v
+  }
 
-export async function publishPost(content: string): Promise<{ postId: string }> {
-  return withRetry(async () => {
-    let token: string
-    try { token = await getToken('linkedin') } catch {
-      token = cleanEnvValue(process.env.LINKEDIN_ACCESS_TOKEN)
+  private authHeaders(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.accessToken}`,
+      'Content-Type': 'application/json',
+      'X-Restli-Protocol-Version': '2.0.0',
     }
-    const author = cleanEnvValue(process.env.LINKEDIN_AUTHOR_URN)
-    if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
+  }
+
+  private handleError(status: number, raw: unknown, context: string): never {
+    if (status === 401) {
+      throw new PlatformAPIError(
+        'linkedin',
+        401,
+        false,
+        `LinkedIn token expired or invalid (401) — ${context}`
+      )
+    }
+    throw new PlatformAPIError(
+      'linkedin',
+      status,
+      status === 429,
+      `LinkedIn API error ${status} — ${context}: ${JSON.stringify(raw)}`
+    )
+  }
+
+  async post(content: PostContent): Promise<PlatformPostResult> {
+    const url = `${LI_BASE}/ugcPosts`
     const body = {
-      author,
+      author: `urn:li:person:${this.personUrn}`,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: content },
+          shareCommentary: { text: content.text },
           shareMediaCategory: 'NONE',
         },
       },
-      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
-    }
-
-    const res = await liFetch('/ugcPosts', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-
-    if (!res.ok) {
-      throw new Error(`LinkedIn publishPost failed: ${res.status} ${await res.text()}`)
-    }
-
-    const json = await res.json() as { id: string }
-    return { postId: json.id }
-  })
-}
-
-export async function publishArticle(
-  title: string,
-  content: string
-): Promise<{ articleId: string }> {
-  return withRetry(async () => {
-    const author = cleanEnvValue(process.env.LINKEDIN_AUTHOR_URN)
-    if (!author) throw new Error('LINKEDIN_AUTHOR_URN missing for LinkedIn posting')
-    const body = {
-      author,
-      lifecycleState: 'PUBLISHED',
-      specificContent: {
-        'com.linkedin.ugc.ShareContent': {
-          shareCommentary: { text: content },
-          shareMediaCategory: 'ARTICLE',
-          media: [{ status: 'READY', title: { text: title } }],
-        },
+      visibility: {
+        'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC',
       },
-      visibility: { 'com.linkedin.ugc.MemberNetworkVisibility': 'PUBLIC' },
     }
 
-    const res = await liFetch('/ugcPosts', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify(body),
+      })
+    } catch (err) {
+      throw new PlatformAPIError('linkedin', 0, false, `Network error: ${String(err)}`)
+    }
+
+    const raw = await res.json()
 
     if (!res.ok) {
-      throw new Error(`LinkedIn publishArticle failed: ${res.status} ${await res.text()}`)
+      this.handleError(res.status, raw, 'post')
     }
 
-    const json = await res.json() as { id: string }
-    return { articleId: json.id }
-  })
-}
-
-export async function getConnections(): Promise<
-  Array<{ id: string; name: string; headline: string }>
-> {
-  return withRetry(async () => {
-    const res = await liFetch('/connections?q=viewer&start=0&count=50')
-
-    if (!res.ok) {
-      console.warn(`[linkedin] getConnections failed: ${res.status}`)
-      return []
-    }
-
-    const json = await res.json() as {
-      elements: Array<{ id: string; localizedFirstName: string; localizedLastName: string; headline?: { localized?: { en_US?: string } } }>
-    }
-
-    return (json.elements ?? []).map((c) => ({
-      id: c.id,
-      name: `${c.localizedFirstName} ${c.localizedLastName}`,
-      headline: c.headline?.localized?.en_US ?? '',
-    }))
-  })
-}
-
-export async function getMetrics(): Promise<{
-  followers: number
-  impressions: number
-  engagementRate: number
-}> {
-  return withRetry(async () => {
-    const organization = process.env.LINKEDIN_ORG_URN
-    if (!organization) throw new Error('LINKEDIN_ORG_URN missing for organization metrics')
-
-    const followersRes = await liFetch(
-      `/organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(organization)}`
-    )
-    if (!followersRes.ok) throw new Error(`LinkedIn follower stats failed: ${followersRes.status} ${await followersRes.text()}`)
-    const followerJson = await followersRes.json() as {
-      elements?: Array<{ followerCounts?: { organicFollowerCount?: number; paidFollowerCount?: number } }>
-    }
-    const followers = Number(
-      (followerJson.elements ?? []).reduce((acc, e) => acc + Number(e.followerCounts?.organicFollowerCount ?? 0) + Number(e.followerCounts?.paidFollowerCount ?? 0), 0)
-    )
-
-    const pageStatsRes = await liFetch(
-      `/organizationPageStatistics?q=organization&organization=${encodeURIComponent(organization)}`
-    )
-    if (!pageStatsRes.ok) throw new Error(`LinkedIn page stats failed: ${pageStatsRes.status} ${await pageStatsRes.text()}`)
-    const pageJson = await pageStatsRes.json() as {
-      elements?: Array<{
-        totalPageStatistics?: {
-          views?: { allPageViews?: { pageViews?: number } }
-          uniqueVisitors?: { allUniqueVisitors?: { uniqueVisitorsCount?: number } }
-        }
-      }>
-    }
-    const impressions = Number(
-      (pageJson.elements ?? []).reduce((acc, e) => acc + Number(e.totalPageStatistics?.views?.allPageViews?.pageViews ?? 0), 0)
-    )
-    const uniqueVisitors = Number(
-      (pageJson.elements ?? []).reduce((acc, e) => acc + Number(e.totalPageStatistics?.uniqueVisitors?.allUniqueVisitors?.uniqueVisitorsCount ?? 0), 0)
-    )
+    // LinkedIn returns the post URN in the `id` field
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new PlatformAPIError('linkedin', res.status, false, 'No post ID returned')
 
     return {
-      followers,
-      impressions,
-      engagementRate: impressions > 0 ? uniqueVisitors / impressions : 0,
+      success: true,
+      postId,
+      url: `https://www.linkedin.com/feed/update/${postId}/`,
+      rawResponse: raw,
     }
-  })
+  }
+
+  async reply(targetId: string, content: string): Promise<PlatformPostResult> {
+    const url = `${LI_BASE}/socialActions/${targetId}/comments`
+    const body = {
+      actor: `urn:li:person:${this.personUrn}`,
+      message: { text: content },
+    }
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body: JSON.stringify(body),
+    })
+    const raw = await res.json()
+
+    if (!res.ok) {
+      this.handleError(res.status, raw, 'reply')
+    }
+
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new PlatformAPIError('linkedin', res.status, false, 'No comment ID returned')
+
+    return { success: true, postId, rawResponse: raw }
+  }
+
+  async getMetrics(postId: string): Promise<PostMetrics> {
+    const url = `${LI_BASE}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent(postId)}`
+    const res = await fetch(url, { headers: this.authHeaders() })
+    const raw = await res.json()
+
+    if (!res.ok) {
+      this.handleError(res.status, raw, 'getMetrics')
+    }
+
+    const elements = (raw as { elements?: Array<{ totalShareStatistics?: { impressionCount?: number; likeCount?: number; commentCount?: number; shareCount?: number } }> }).elements ?? []
+    const stats = elements[0]?.totalShareStatistics ?? {}
+
+    return {
+      impressions: stats.impressionCount,
+      likes: stats.likeCount,
+      replies: stats.commentCount,
+      reposts: stats.shareCount,
+    }
+  }
+
+  async verifyCredentials(): Promise<boolean> {
+    try {
+      const res = await fetch(`${LI_BASE}/me`, { headers: this.authHeaders() })
+      if (res.status === 401) {
+        throw new PlatformAPIError('linkedin', 401, false, 'LinkedIn token expired')
+      }
+      return res.ok
+    } catch (err) {
+      if (err instanceof PlatformAPIError) throw err
+      return false
+    }
+  }
 }

@@ -1,188 +1,207 @@
-// ============================================================
-// ProPost Empire — Instagram Graph API Wrapper
-// ============================================================
+// InstagramAdapter — Instagram Graph API platform adapter
+// Supports post, reel_publish, story_publish, reply, getMetrics
+// Retries media upload up to 3 times with exponential backoff (1s, 2s, 4s)
 
-import { withRetry } from './retry'
-import { cleanEnvValue } from '@/lib/env'
-import { getToken } from '@/lib/platforms/token'
+import type { Platform } from '../types'
+import { PlatformAPIError } from '../errors'
+import type { PlatformAdapter, PostContent, PlatformPostResult, PostMetrics } from './x'
 
-const BASE_URL = 'https://graph.facebook.com/v25.0'
+const GRAPH_BASE = 'https://graph.facebook.com/v18.0'
+const UPLOAD_RETRY_DELAYS = [1000, 2000, 4000]
 
-async function token(): Promise<string> {
-  try { return await getToken('instagram') } catch {
-    return cleanEnvValue(process.env.INSTAGRAM_ACCESS_TOKEN)
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms))
 }
 
-function accountId(): string {
-  return cleanEnvValue(process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID)
-}
+export class InstagramAdapter implements PlatformAdapter {
+  readonly platform: Platform = 'instagram'
 
-async function igFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const t = await token()
-  const sep = path.includes('?') ? '&' : '?'
-  const res = await fetch(`${BASE_URL}${path}${sep}access_token=${t}`, options)
-
-  if (res.status === 429) {
-    await new Promise((r) => setTimeout(r, 3600000))
-    throw new Error('Instagram API rate limit hit (429)')
+  private get accessToken(): string {
+    const v = process.env.INSTAGRAM_ACCESS_TOKEN
+    if (!v) throw new Error('INSTAGRAM_ACCESS_TOKEN not set')
+    return v
   }
 
-  return res
-}
+  private get accountId(): string {
+    const v = process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID
+    if (!v) throw new Error('INSTAGRAM_BUSINESS_ACCOUNT_ID not set')
+    return v
+  }
 
-export async function publishPost(
-  caption: string,
-  imageUrl: string
-): Promise<{ postId: string }> {
-  return withRetry(async () => {
-    // Step 1: Create media container
-    const containerRes = await igFetch(`/${accountId()}/media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_url: imageUrl, caption }),
+  /** Create a media container with retry on upload error */
+  private async createMediaContainer(
+    params: Record<string, string>
+  ): Promise<string> {
+    const url = `${GRAPH_BASE}/${this.accountId}/media`
+    const body = new URLSearchParams({
+      ...params,
+      access_token: this.accessToken,
     })
 
-    if (!containerRes.ok) {
-      throw new Error(`IG createContainer failed: ${containerRes.status} ${await containerRes.text()}`)
-    }
+    let lastError: unknown
+    for (let attempt = 0; attempt <= UPLOAD_RETRY_DELAYS.length; attempt++) {
+      try {
+        const res = await fetch(url, { method: 'POST', body })
+        const raw = await res.json()
 
-    const container = await containerRes.json() as { id: string }
-
-    // Step 2: Publish container
-    const publishRes = await igFetch(`/${accountId()}/media_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creation_id: container.id }),
-    })
-
-    if (!publishRes.ok) {
-      throw new Error(`IG publish failed: ${publishRes.status} ${await publishRes.text()}`)
-    }
-
-    const result = await publishRes.json() as { id: string }
-    return { postId: result.id }
-  })
-}
-
-export async function publishStory(
-  imageUrl: string,
-  caption?: string
-): Promise<{ storyId: string }> {
-  return withRetry(async () => {
-    const body: Record<string, string> = { image_url: imageUrl, media_type: 'STORIES' }
-    if (caption) body.caption = caption
-
-    const containerRes = await igFetch(`/${accountId()}/media`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-
-    if (!containerRes.ok) {
-      throw new Error(`IG story container failed: ${containerRes.status} ${await containerRes.text()}`)
-    }
-
-    const container = await containerRes.json() as { id: string }
-
-    const publishRes = await igFetch(`/${accountId()}/media_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creation_id: container.id }),
-    })
-
-    if (!publishRes.ok) {
-      throw new Error(`IG story publish failed: ${publishRes.status} ${await publishRes.text()}`)
-    }
-
-    const result = await publishRes.json() as { id: string }
-    return { storyId: result.id }
-  })
-}
-
-export async function getDMs(): Promise<
-  Array<{ id: string; senderId: string; text: string; timestamp: string }>
-> {
-  return withRetry(async () => {
-    const res = await igFetch(`/${accountId()}/conversations?fields=messages{message,from,created_time}`)
-
-    if (!res.ok) {
-      console.warn(`[instagram] getDMs failed: ${res.status}`)
-      return []
-    }
-
-    const json = await res.json() as {
-      data: Array<{
-        messages: {
-          data: Array<{ id: string; message: string; from: { id: string }; created_time: string }>
+        if (!res.ok) {
+          const rateLimited = res.status === 429
+          throw new PlatformAPIError(
+            'instagram',
+            res.status,
+            rateLimited,
+            `Instagram media create error ${res.status}: ${JSON.stringify(raw)}`
+          )
         }
-      }>
-    }
 
-    const dms: Array<{ id: string; senderId: string; text: string; timestamp: string }> = []
-    for (const conv of json.data ?? []) {
-      for (const msg of conv.messages?.data ?? []) {
-        dms.push({
-          id: msg.id,
-          senderId: msg.from.id,
-          text: msg.message,
-          timestamp: msg.created_time,
-        })
+        const mediaId = (raw as { id?: string }).id
+        if (!mediaId) throw new Error('No media ID returned from Instagram')
+        return mediaId
+      } catch (err) {
+        lastError = err
+        if (attempt < UPLOAD_RETRY_DELAYS.length) {
+          await sleep(UPLOAD_RETRY_DELAYS[attempt])
+        }
       }
     }
-    return dms
-  })
-}
+    throw lastError
+  }
 
-export async function replyToDM(
-  recipientId: string,
-  text: string
-): Promise<{ messageId: string }> {
-  return withRetry(async () => {
-    const res = await igFetch(`/me/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        recipient: { id: recipientId },
-        message: { text },
-      }),
+  /** Publish a previously created media container */
+  private async publishContainer(mediaId: string): Promise<string> {
+    const url = `${GRAPH_BASE}/${mediaId}/publish`
+    const body = new URLSearchParams({
+      creation_id: mediaId,
+      access_token: this.accessToken,
     })
 
+    const res = await fetch(url, { method: 'POST', body })
+    const raw = await res.json()
+
     if (!res.ok) {
-      throw new Error(`IG replyToDM failed: ${res.status} ${await res.text()}`)
+      throw new PlatformAPIError(
+        'instagram',
+        res.status,
+        res.status === 429,
+        `Instagram publish error ${res.status}: ${JSON.stringify(raw)}`
+      )
     }
 
-    const json = await res.json() as { message_id: string }
-    return { messageId: json.message_id }
-  })
-}
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new Error('No post ID returned from Instagram publish')
+    return postId
+  }
 
-export async function getMetrics(): Promise<{
-  followers: number
-  impressions: number
-  engagementRate: number
-}> {
-  return withRetry(async () => {
-    const profileRes = await igFetch(`/${accountId()}?fields=followers_count,media_count`)
-    if (!profileRes.ok) throw new Error(`IG profile metrics failed: ${profileRes.status} ${await profileRes.text()}`)
-    const profile = await profileRes.json() as { followers_count: number }
-
-    const insightsRes = await igFetch(`/${accountId()}/insights?metric=impressions,reach,profile_views&period=day`)
-    if (!insightsRes.ok) throw new Error(`IG insights failed: ${insightsRes.status} ${await insightsRes.text()}`)
-    const insights = await insightsRes.json() as {
-      data?: Array<{ name: string; values?: Array<{ value: number }> }>
+  async post(content: PostContent): Promise<PlatformPostResult> {
+    const params: Record<string, string> = { caption: content.text }
+    if (content.mediaUrls?.[0]) {
+      params.image_url = content.mediaUrls[0]
     }
-    const impressions = Number(
-      insights.data?.find((m) => m.name === 'impressions')?.values?.[0]?.value ?? 0
-    )
-    const reach = Number(
-      insights.data?.find((m) => m.name === 'reach')?.values?.[0]?.value ?? 0
-    )
+
+    const mediaId = await this.createMediaContainer(params)
+    const postId = await this.publishContainer(mediaId)
 
     return {
-      followers: Number(profile.followers_count ?? 0),
-      impressions,
-      engagementRate: reach > 0 ? impressions / reach : 0,
+      success: true,
+      postId,
+      url: `https://www.instagram.com/p/${postId}/`,
+      rawResponse: { mediaId, postId },
     }
-  })
+  }
+
+  async reelPublish(content: PostContent): Promise<PlatformPostResult> {
+    const videoUrl = content.mediaUrls?.[0]
+    if (!videoUrl) throw new Error('reelPublish requires a video URL in mediaUrls[0]')
+
+    const mediaId = await this.createMediaContainer({
+      media_type: 'REELS',
+      video_url: videoUrl,
+      caption: content.text,
+    })
+    const postId = await this.publishContainer(mediaId)
+
+    return {
+      success: true,
+      postId,
+      rawResponse: { mediaId, postId },
+    }
+  }
+
+  async storyPublish(content: PostContent): Promise<PlatformPostResult> {
+    const mediaUrl = content.mediaUrls?.[0]
+    if (!mediaUrl) throw new Error('storyPublish requires a media URL in mediaUrls[0]')
+
+    const isVideo = mediaUrl.match(/\.(mp4|mov|avi)$/i)
+    const mediaId = await this.createMediaContainer({
+      media_type: 'STORIES',
+      ...(isVideo ? { video_url: mediaUrl } : { image_url: mediaUrl }),
+      caption: content.text,
+    })
+    const postId = await this.publishContainer(mediaId)
+
+    return {
+      success: true,
+      postId,
+      rawResponse: { mediaId, postId },
+    }
+  }
+
+  async reply(targetId: string, content: string): Promise<PlatformPostResult> {
+    const url = `${GRAPH_BASE}/${targetId}/replies`
+    const body = new URLSearchParams({
+      message: content,
+      access_token: this.accessToken,
+    })
+
+    const res = await fetch(url, { method: 'POST', body })
+    const raw = await res.json()
+
+    if (!res.ok) {
+      throw new PlatformAPIError(
+        'instagram',
+        res.status,
+        res.status === 429,
+        `Instagram reply error ${res.status}: ${JSON.stringify(raw)}`
+      )
+    }
+
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new Error('No reply ID returned from Instagram')
+
+    return { success: true, postId, rawResponse: raw }
+  }
+
+  async getMetrics(postId: string): Promise<PostMetrics> {
+    const url = `${GRAPH_BASE}/${postId}/insights?metric=impressions,likes,comments&access_token=${this.accessToken}`
+    const res = await fetch(url)
+    const raw = await res.json()
+
+    if (!res.ok) {
+      throw new PlatformAPIError(
+        'instagram',
+        res.status,
+        res.status === 429,
+        `Instagram metrics error ${res.status}`
+      )
+    }
+
+    const data = (raw as { data?: Array<{ name: string; values: Array<{ value: number }> }> }).data ?? []
+    const get = (name: string) => data.find((d) => d.name === name)?.values?.[0]?.value
+
+    return {
+      impressions: get('impressions'),
+      likes: get('likes'),
+      replies: get('comments'),
+    }
+  }
+
+  async verifyCredentials(): Promise<boolean> {
+    try {
+      const url = `${GRAPH_BASE}/${this.accountId}?fields=id,name&access_token=${this.accessToken}`
+      const res = await fetch(url)
+      return res.ok
+    } catch {
+      return false
+    }
+  }
 }

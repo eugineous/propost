@@ -1,125 +1,149 @@
-// ============================================================
-// ProPost Empire — Facebook Graph API Wrapper
-// ============================================================
+// FacebookAdapter — Facebook Graph API platform adapter
+// Enforces 30-minute minimum gap between posts (checks actions table)
 
-import { withRetry } from './retry'
-import { cleanEnvValue } from '@/lib/env'
+import type { Platform } from '../types'
+import { PlatformAPIError } from '../errors'
+import { getDb } from '../db/client'
+import type { PlatformAdapter, PostContent, PlatformPostResult, PostMetrics } from './x'
 
-const BASE_URL = 'https://graph.facebook.com/v25.0'
+const GRAPH_BASE = 'https://graph.facebook.com/v18.0'
+const MIN_GAP_MS = 30 * 60 * 1000 // 30 minutes
 
-function token(): string {
-  return cleanEnvValue(process.env.FACEBOOK_ACCESS_TOKEN)
-}
+export class FacebookAdapter implements PlatformAdapter {
+  readonly platform: Platform = 'facebook'
 
-function pageId(): string {
-  return cleanEnvValue(process.env.FACEBOOK_PAGE_ID)
-}
-
-async function fbFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const sep = path.includes('?') ? '&' : '?'
-  const res = await fetch(`${BASE_URL}${path}${sep}access_token=${token()}`, options)
-
-  if (res.status === 429) {
-    await new Promise((r) => setTimeout(r, 3600000))
-    throw new Error('Facebook API rate limit hit (429)')
+  private get accessToken(): string {
+    const v = process.env.FACEBOOK_PAGE_ACCESS_TOKEN
+    if (!v) throw new Error('FACEBOOK_PAGE_ACCESS_TOKEN not set')
+    return v
   }
 
-  return res
-}
+  private get pageId(): string {
+    const v = process.env.FACEBOOK_PAGE_ID
+    if (!v) throw new Error('FACEBOOK_PAGE_ID not set')
+    return v
+  }
 
-export async function publishPost(
-  message: string,
-  link?: string
-): Promise<{ postId: string }> {
-  return withRetry(async () => {
-    const body: Record<string, string> = { message }
-    if (link) body.link = link
+  /** Check actions table for last Facebook post; throw if < 30 min ago */
+  private async enforcePostGap(): Promise<void> {
+    const db = getDb()
+    const rows = await db`
+      SELECT timestamp FROM actions
+      WHERE platform = 'facebook'
+        AND action_type = 'post'
+        AND status = 'success'
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `
+    const last = (rows as Array<{ timestamp: Date }>)[0]?.timestamp
+    if (!last) return
 
-    const res = await fbFetch(`/${pageId()}/feed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    const elapsed = Date.now() - new Date(last).getTime()
+    if (elapsed < MIN_GAP_MS) {
+      const waitMs = MIN_GAP_MS - elapsed
+      throw new PlatformAPIError(
+        'facebook',
+        429,
+        true,
+        `Facebook 30-minute gap not met. Wait ${Math.ceil(waitMs / 1000)}s more.`
+      )
+    }
+  }
+
+  async post(content: PostContent): Promise<PlatformPostResult> {
+    await this.enforcePostGap()
+
+    const url = `${GRAPH_BASE}/${this.pageId}/feed`
+    const body = new URLSearchParams({
+      message: content.text,
+      access_token: this.accessToken,
     })
 
-    if (!res.ok) {
-      throw new Error(`FB publishPost failed: ${res.status} ${await res.text()}`)
+    let res: Response
+    try {
+      res = await fetch(url, { method: 'POST', body })
+    } catch (err) {
+      throw new PlatformAPIError('facebook', 0, false, `Network error: ${String(err)}`)
     }
 
-    const json = await res.json() as { id: string }
-    return { postId: json.id }
-  })
-}
-
-export async function getComments(
-  postId: string
-): Promise<Array<{ id: string; message: string; from: string; createdTime: string }>> {
-  return withRetry(async () => {
-    const res = await fbFetch(`/${postId}/comments?fields=id,message,from,created_time`)
+    const raw = await res.json()
 
     if (!res.ok) {
-      console.warn(`[facebook] getComments failed: ${res.status}`)
-      return []
+      throw new PlatformAPIError(
+        'facebook',
+        res.status,
+        res.status === 429,
+        `Facebook API error ${res.status}: ${JSON.stringify(raw)}`
+      )
     }
 
-    const json = await res.json() as {
-      data: Array<{ id: string; message: string; from: { name: string }; created_time: string }>
-    }
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new PlatformAPIError('facebook', res.status, false, 'No post ID returned')
 
-    return (json.data ?? []).map((c) => ({
-      id: c.id,
-      message: c.message,
-      from: c.from?.name ?? 'unknown',
-      createdTime: c.created_time,
-    }))
-  })
-}
-
-export async function moderateComment(
-  commentId: string,
-  action: 'hide' | 'remove'
-): Promise<{ success: boolean }> {
-  return withRetry(async () => {
-    if (action === 'remove') {
-      const res = await fbFetch(`/${commentId}`, { method: 'DELETE' })
-      return { success: res.ok }
-    }
-
-    // Hide comment
-    const res = await fbFetch(`/${commentId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_hidden: true }),
-    })
-    return { success: res.ok }
-  })
-}
-
-export async function getMetrics(): Promise<{
-  followers: number
-  impressions: number
-  engagementRate: number
-}> {
-  return withRetry(async () => {
-    const profileRes = await fbFetch(`/${pageId()}?fields=fan_count,followers_count`)
-    if (!profileRes.ok) throw new Error(`FB profile metrics failed: ${profileRes.status} ${await profileRes.text()}`)
-    const profile = await profileRes.json() as { fan_count: number; followers_count: number }
-
-    const insightsRes = await fbFetch(`/${pageId()}/insights?metric=page_impressions,page_engaged_users&period=day`)
-    if (!insightsRes.ok) throw new Error(`FB insights failed: ${insightsRes.status} ${await insightsRes.text()}`)
-    const insights = await insightsRes.json() as {
-      data?: Array<{ name: string; values?: Array<{ value: number }> }>
-    }
-
-    const impressions = Number(
-      insights.data?.find((m) => m.name === 'page_impressions')?.values?.[0]?.value ?? 0
-    )
-    const engagedUsers = Number(
-      insights.data?.find((m) => m.name === 'page_engaged_users')?.values?.[0]?.value ?? 0
-    )
     return {
-      followers: Number(profile.followers_count ?? profile.fan_count ?? 0),
-      impressions,
-      engagementRate: impressions > 0 ? engagedUsers / impressions : 0,
+      success: true,
+      postId,
+      url: `https://www.facebook.com/${postId}`,
+      rawResponse: raw,
     }
-  })
+  }
+
+  async reply(targetId: string, content: string): Promise<PlatformPostResult> {
+    const url = `${GRAPH_BASE}/${targetId}/comments`
+    const body = new URLSearchParams({
+      message: content,
+      access_token: this.accessToken,
+    })
+
+    const res = await fetch(url, { method: 'POST', body })
+    const raw = await res.json()
+
+    if (!res.ok) {
+      throw new PlatformAPIError(
+        'facebook',
+        res.status,
+        res.status === 429,
+        `Facebook reply error ${res.status}: ${JSON.stringify(raw)}`
+      )
+    }
+
+    const postId = (raw as { id?: string }).id
+    if (!postId) throw new PlatformAPIError('facebook', res.status, false, 'No reply ID returned')
+
+    return { success: true, postId, rawResponse: raw }
+  }
+
+  async getMetrics(postId: string): Promise<PostMetrics> {
+    const url = `${GRAPH_BASE}/${postId}/insights?metric=post_impressions,post_reactions_by_type_total&access_token=${this.accessToken}`
+    const res = await fetch(url)
+    const raw = await res.json()
+
+    if (!res.ok) {
+      throw new PlatformAPIError(
+        'facebook',
+        res.status,
+        res.status === 429,
+        `Facebook metrics error ${res.status}`
+      )
+    }
+
+    const data = (raw as { data?: Array<{ name: string; values: Array<{ value: number | Record<string, number> }> }> }).data ?? []
+    const impressions = data.find((d) => d.name === 'post_impressions')?.values?.[0]?.value as number | undefined
+    const reactions = data.find((d) => d.name === 'post_reactions_by_type_total')?.values?.[0]?.value
+    const likes = typeof reactions === 'object' && reactions !== null
+      ? Object.values(reactions).reduce((a, b) => a + b, 0)
+      : undefined
+
+    return { impressions, likes }
+  }
+
+  async verifyCredentials(): Promise<boolean> {
+    try {
+      const url = `${GRAPH_BASE}/${this.pageId}?fields=id,name&access_token=${this.accessToken}`
+      const res = await fetch(url)
+      return res.ok
+    } catch {
+      return false
+    }
+  }
 }

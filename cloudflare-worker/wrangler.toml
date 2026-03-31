@@ -1,6 +1,72 @@
-name = "propost-autopilot"
-main = "autopilot-cron.js"
-compatibility_date = "2024-01-01"
+name = "propost-empire"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
 
+# ── Cron: single trigger every 5 min, worker decides which jobs to run ────────
 [triggers]
 crons = ["*/5 * * * *"]
+
+# ── KV Namespaces ─────────────────────────────────────────────────────────────
+# Create with: wrangler kv:namespace create WEBHOOK_KV
+[[kv_namespaces]]
+binding = "WEBHOOK_KV"
+id = "REPLACE_WITH_WEBHOOK_KV_ID"
+
+# Create with: wrangler kv:namespace create AGENT_STATE_KV
+[[kv_namespaces]]
+binding = "AGENT_STATE_KV"
+id = "REPLACE_WITH_AGENT_STATE_KV_ID"
+
+# ── Queues ────────────────────────────────────────────────────────────────────
+# Create with: wrangler queues create propost-task-queue
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue = "propost-task-queue"
+
+# Create with: wrangler queues create propost-dead-letter
+[[queues.producers]]
+binding = "DEAD_LETTER_QUEUE"
+queue = "propost-dead-letter"
+
+[[queues.consumers]]
+queue = "propost-task-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "propost-dead-letter"
+
+# ── Workers AI ────────────────────────────────────────────────────────────────
+[ai]
+binding = "AI"
+
+# ── Analytics Engine ──────────────────────────────────────────────────────────
+# Create with: wrangler analytics-engine create propost-analytics
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "propost_events"
+
+# ── Durable Objects ───────────────────────────────────────────────────────────
+[[durable_objects.bindings]]
+name = "COMPANY_STATE"
+class_name = "CompanyState"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CompanyState"]
+
+# ── Secrets (set via `wrangler secret put`) ───────────────────────────────────
+# PROPOST_URL
+# CRON_SECRET
+# INTERNAL_SECRET
+# WEBHOOK_VERIFY_TOKEN
+# X_WEBHOOK_SECRET
+# INSTAGRAM_APP_SECRET
+# FACEBOOK_APP_SECRET
+# LINKEDIN_CLIENT_SECRET
+# X_BROWSER_POSTER_URL
+# CF_AI_GATEWAY_URL
+
+# ── Vars (non-secret) ─────────────────────────────────────────────────────────
+[vars]
+# PROPOST_URL = "https://your-app.vercel.app"  # set as secret instead

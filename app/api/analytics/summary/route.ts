@@ -1,108 +1,24 @@
-export const dynamic = 'force-dynamic'
-
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { agentActions, dailyMetrics, posts, trends } from '@/lib/schema'
-import { desc, gte, eq, and } from 'drizzle-orm'
-import { sql } from 'drizzle-orm'
+import { analyticsEngine } from '@/lib/analytics/engine'
+import type { Platform } from '@/lib/types'
 
 export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const platform = (searchParams.get('platform') ?? 'x') as Platform
+  const period = (searchParams.get('period') ?? '7d') as '7d' | '30d' | '90d'
+
   try {
-    const { searchParams } = new URL(req.url)
-    const range = searchParams.get('range') ?? '7'
-    const days = parseInt(range, 10)
-    const since = new Date()
-    since.setDate(since.getDate() - days)
-    const sinceStr = since.toISOString()
+    const periodMap = { '7d': '7d', '30d': '30d', '90d': '30d' } as const
+    const [topPosts, growth] = await Promise.all([
+      analyticsEngine.getTopPosts(platform, periodMap[period]),
+      analyticsEngine.getFollowerGrowth(platform, period === '90d' ? 12 : period === '30d' ? 4 : 1),
+    ])
 
-    // Follower growth from daily_metrics
-    const metrics = await db
-      .select()
-      .from(dailyMetrics)
-      .orderBy(desc(dailyMetrics.date))
-      .limit(days * 5)
-
-    // Agent activity: actions per agent per day
-    const agentActivity = await db
-      .select({
-        agentName: agentActions.agentName,
-        company: agentActions.company,
-        count: sql<number>`count(*)::int`,
-      })
-      .from(agentActions)
-      .where(gte(agentActions.createdAt, new Date(sinceStr)))
-      .groupBy(agentActions.agentName, agentActions.company)
-      .orderBy(desc(sql`count(*)`))
-      .limit(20)
-
-    // Top posts
-    const topPosts = await db
-      .select()
-      .from(posts)
-      .where(gte(posts.createdAt, new Date(sinceStr)))
-      .orderBy(desc(posts.impressions))
-      .limit(5)
-
-    // Brand deal funnel
-    const brandDeals = await db
-      .select()
-      .from(agentActions)
-      .where(and(
-        eq(agentActions.actionType, 'brand_deal'),
-        gte(agentActions.createdAt, new Date(sinceStr))
-      ))
-      .orderBy(desc(agentActions.createdAt))
-      .limit(50)
-
-    // Trend performance
-    const trendData = await db
-      .select()
-      .from(trends)
-      .where(gte(trends.detectedAt, new Date(sinceStr)))
-      .orderBy(desc(trends.relevanceScore))
-      .limit(10)
-
-    // Total actions
-    const [{ total }] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(agentActions)
-      .where(gte(agentActions.createdAt, new Date(sinceStr)))
-
-    return NextResponse.json({
-      ok: true,
-      range: days,
-      totalActions: total,
-      metrics,
-      agentActivity,
-      topPosts: topPosts.map((p) => ({
-        id: p.id,
-        platform: p.platform,
-        content: (p.content ?? '').slice(0, 100),
-        impressions: p.impressions ?? 0,
-        likes: p.likes ?? 0,
-        reposts: p.reposts ?? 0,
-        publishedAt: p.publishedAt,
-      })),
-      brandDeals: brandDeals.map((r) => {
-        const d = (r.details ?? {}) as Record<string, unknown>
-        return {
-          id: r.id,
-          brandName: d.brandName ?? 'Unknown',
-          stage: d.stage ?? 'incoming',
-          estimatedValue: Number(d.estimatedValue ?? 0),
-          createdAt: r.createdAt,
-        }
-      }),
-      trends: trendData.map((t) => ({
-        id: t.id,
-        text: t.trendText,
-        relevance: Number(t.relevanceScore ?? 0),
-        actioned: t.actioned,
-        detectedAt: t.detectedAt,
-      })),
-    })
+    return NextResponse.json({ platform, period, topPosts, growth })
   } catch (err) {
-    console.error('[analytics/summary GET]', err)
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Analytics fetch failed' },
+      { status: 500 }
+    )
   }
 }

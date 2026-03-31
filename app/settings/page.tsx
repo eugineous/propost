@@ -1,341 +1,116 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { useState } from 'react'
-import { signOut } from 'next-auth/react'
 
-const PLATFORMS = [
-  {
-    id: 'instagram',
-    name: 'Instagram',
-    icon: '📸',
-    color: '#E1306C',
-    envKeys: ['INSTAGRAM_ACCESS_TOKEN', 'INSTAGRAM_BUSINESS_ACCOUNT_ID'],
-    statusNote: 'Connected via Graph API',
-  },
-  {
-    id: 'facebook',
-    name: 'Facebook',
-    icon: '👥',
-    color: '#1877F2',
-    envKeys: ['FACEBOOK_PAGE_ID', 'FACEBOOK_ACCESS_TOKEN'],
-    statusNote: 'Connected via Graph API',
-  },
-  {
-    id: 'x',
-    name: 'X / Twitter',
-    icon: '🐦',
-    color: '#1DA1F2',
-    envKeys: ['TWITTER_API_KEY', 'TWITTER_ACCESS_TOKEN'],
-    statusNote: 'Not connected — Add API keys to connect',
-    disconnected: true,
-  },
-  {
-    id: 'linkedin',
-    name: 'LinkedIn',
-    icon: '💼',
-    color: '#0077B5',
-    envKeys: ['LINKEDIN_ACCESS_TOKEN'],
-    statusNote: 'Not connected — Add API keys to connect',
-    disconnected: true,
-  },
-]
+interface PlatformConn {
+  id: string
+  platform: string
+  status: string
+  last_verified?: string
+  expires_at?: string
+  scopes?: string[]
+  error_message?: string
+}
 
-const ALL_AGENTS = [
-  { name: 'sovereign', company: 'intelcore', role: 'CEO / Empire Commander' },
-  { name: 'oracle', company: 'intelcore', role: 'Cross-Platform Strategist' },
-  { name: 'memory', company: 'intelcore', role: 'Learning Engine' },
-  { name: 'sentry', company: 'intelcore', role: 'Crisis Monitor' },
-  { name: 'scribe', company: 'intelcore', role: 'Reporter' },
-  { name: 'zara', company: 'xforce', role: 'X Content Lead' },
-  { name: 'blaze', company: 'xforce', role: 'Content Creator' },
-  { name: 'scout', company: 'xforce', role: 'Trend Scout' },
-  { name: 'echo', company: 'xforce', role: 'Engagement Agent' },
-  { name: 'hawk', company: 'xforce', role: 'Compliance Guard' },
-  { name: 'lumen', company: 'xforce', role: 'Analytics Agent' },
-  { name: 'aurora', company: 'gramgod', role: 'IG Content Lead' },
-  { name: 'vibe', company: 'gramgod', role: 'Trend Curator' },
-  { name: 'chat', company: 'gramgod', role: 'DM Handler' },
-  { name: 'deal_ig', company: 'gramgod', role: 'Brand Deal Agent' },
-  { name: 'lens', company: 'gramgod', role: 'Visual Analytics' },
-  { name: 'chief', company: 'pagepower', role: 'FB Content Lead' },
-  { name: 'pulse', company: 'pagepower', role: 'FB Analytics' },
-  { name: 'community', company: 'pagepower', role: 'Community Manager' },
-  { name: 'reach', company: 'pagepower', role: 'Ads Agent' },
-  { name: 'root', company: 'webboss', role: 'Web Architect' },
-  { name: 'crawl', company: 'webboss', role: 'SEO Crawler' },
-  { name: 'build', company: 'webboss', role: 'Content Builder' },
-  { name: 'shield', company: 'webboss', role: 'Security Agent' },
-  { name: 'speed', company: 'webboss', role: 'Performance Agent' },
-  { name: 'nova', company: 'linkedelite', role: 'LI Content Lead' },
-  { name: 'orator', company: 'linkedelite', role: 'Thought Leader' },
-  { name: 'bridge', company: 'linkedelite', role: 'Networking Agent' },
-  { name: 'atlas', company: 'linkedelite', role: 'LI Analytics' },
-  { name: 'people', company: 'hrforce', role: 'HR Lead' },
-  { name: 'judge', company: 'legalshield', role: 'Compliance Judge' },
-  { name: 'banker', company: 'financedesk', role: 'Finance Lead' },
-]
-
-const COMPANY_COLORS: Record<string, string> = {
-  intelcore: '#FFD700',
-  xforce: '#1DA1F2',
-  gramgod: '#E1306C',
-  pagepower: '#1877F2',
-  webboss: '#22C55E',
-  linkedelite: '#0077B5',
-  hrforce: '#F97316',
-  legalshield: '#EF4444',
-  financedesk: '#10B981',
+const PLATFORM_DOCS: Record<string, string> = {
+  x: 'Set X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET in Vercel env vars.',
+  instagram: 'Set INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ACCOUNT_ID in Vercel env vars.',
+  facebook: 'Set FACEBOOK_ACCESS_TOKEN, FACEBOOK_PAGE_ID in Vercel env vars.',
+  linkedin: 'Set LINKEDIN_ACCESS_TOKEN, LINKEDIN_PERSON_URN in Vercel env vars.',
+  website: 'Set VERCEL_DEPLOY_HOOK_URL in Vercel env vars.',
 }
 
 export default function SettingsPage() {
-  const [agentToggles, setAgentToggles] = useState<Record<string, boolean>>(
-    Object.fromEntries(ALL_AGENTS.map((a) => [a.name, true]))
-  )
-  const [notifications, setNotifications] = useState({
-    brandDeals: true,
-    crises: true,
-    milestones: false,
-  })
-  const [seedStatus, setSeedStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
-  const [cacheStatus, setCacheStatus] = useState<'idle' | 'clearing' | 'done'>('idle')
+  const [connections, setConnections] = useState<PlatformConn[]>([])
 
-  const runSeed = async () => {
-    setSeedStatus('running')
-    try {
-      await fetch('/api/agents/startup', { method: 'POST' })
-      setSeedStatus('done')
-      setTimeout(() => setSeedStatus('idle'), 3000)
-    } catch {
-      setSeedStatus('error')
-      setTimeout(() => setSeedStatus('idle'), 3000)
-    }
-  }
-
-  const clearCache = async () => {
-    setCacheStatus('clearing')
-    await new Promise((r) => setTimeout(r, 1000))
-    setCacheStatus('done')
-    setTimeout(() => setCacheStatus('idle'), 2000)
-  }
-
-  const exportAll = async () => {
-    try {
-      const [metrics, actions] = await Promise.all([
-        fetch('/api/metrics').then((r) => r.json()),
-        fetch('/api/feed').then((r) => r.json()),
-      ])
-      const blob = new Blob([JSON.stringify({ metrics, actions, exportedAt: new Date().toISOString() }, null, 2)], {
-        type: 'application/json',
-      })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `propost-export-${new Date().toISOString().split('T')[0]}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      // ignore
-    }
-  }
+  useEffect(() => {
+    fetch('/api/connections').then((r) => r.json()).then(setConnections).catch(() => {})
+  }, [])
 
   return (
-    <div className="min-h-screen" style={{ background: '#0A0A14', color: '#E2E8F0' }}>
-      <nav className="flex items-center justify-between px-6 py-3 border-b border-pp-border" style={{ background: '#12121F' }}>
-        <div className="flex items-center gap-6">
-          <Link href="/" className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>← PROPOST EMPIRE</Link>
-          <span className="pixel-text text-pp-accent" style={{ fontSize: 9 }}>⚙️ SETTINGS</span>
-        </div>
-        <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="pixel-text text-pp-danger hover:opacity-80 transition-opacity"
-          style={{ fontSize: 8 }}
-        >
-          SIGN OUT
-        </button>
-      </nav>
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+      <div className="flex items-center gap-4 mb-6">
+        <Link href="/" className="text-gray-500 hover:text-gray-300 text-sm">← Empire</Link>
+        <h1 className="text-lg font-bold text-white">Settings & Connections</h1>
+      </div>
 
-      <div className="p-6 max-w-4xl mx-auto space-y-6">
-
-        {/* Workflow Editor Link */}
-        <div className="pixel-card p-4">
-          <h2 className="pixel-text text-pp-gold mb-3" style={{ fontSize: 9 }}>WORKFLOW ENGINE</h2>
-          <p className="text-pp-muted mb-3" style={{ fontSize: 8 }}>Create and assign custom workflows to any agent. Control what every agent does and when.</p>
-          <Link
-            href="/settings/workflows"
-            className="inline-block px-4 py-2 rounded pixel-text"
-            style={{ fontSize: 8, background: '#22C55E22', color: '#22C55E', border: '1px solid #22C55E44' }}
-          >
-            ⚙️ OPEN WORKFLOW EDITOR →
-          </Link>
-        </div>
-
-        {/* Platform Connections */}
-        <div className="pixel-card p-4">
-          <h2 className="pixel-text text-pp-gold mb-4" style={{ fontSize: 9 }}>PLATFORM CONNECTIONS</h2>
-          <p className="text-pp-muted mb-3" style={{ fontSize: 8 }}>Connect your social media accounts with one click — no API keys needed.</p>
-          <Link
-            href="/settings/connections"
-            className="inline-block px-4 py-2 rounded pixel-text"
-            style={{ fontSize: 8, background: '#1DA1F222', color: '#1DA1F2', border: '1px solid #1DA1F244' }}
-          >
-            🔗 MANAGE CONNECTIONS →
-          </Link>
-        </div>
-
-        {/* Agent Settings */}
-        <div className="pixel-card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>AGENT SETTINGS</h2>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAgentToggles(Object.fromEntries(ALL_AGENTS.map((a) => [a.name, true])))}
-                className="px-2 py-1 rounded pixel-text"
-                style={{ fontSize: 7, background: '#22C55E22', color: '#22C55E' }}
-              >
-                ENABLE ALL
-              </button>
-              <button
-                onClick={() => setAgentToggles(Object.fromEntries(ALL_AGENTS.map((a) => [a.name, false])))}
-                className="px-2 py-1 rounded pixel-text"
-                style={{ fontSize: 7, background: '#EF444422', color: '#EF4444' }}
-              >
-                DISABLE ALL
-              </button>
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-8 space-y-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <div className="text-xs text-gray-400 font-bold tracking-wider mb-4">PLATFORM CONNECTIONS</div>
+            <div className="space-y-4">
+              {['x', 'instagram', 'facebook', 'linkedin', 'website'].map((p) => {
+                const conn = connections.find((c) => c.platform === p)
+                const status = conn?.status ?? 'not configured'
+                return (
+                  <div key={p} className="border border-gray-800 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-gray-200 capitalize">{p}</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        status === 'connected' ? 'bg-green-900 text-green-400' :
+                        status === 'expired' ? 'bg-yellow-900 text-yellow-400' :
+                        status === 'error' ? 'bg-red-900 text-red-400' :
+                        'bg-gray-800 text-gray-500'
+                      }`}>{status}</span>
+                    </div>
+                    {conn?.last_verified && (
+                      <div className="text-xs text-gray-600">Last verified: {new Date(conn.last_verified).toLocaleString()}</div>
+                    )}
+                    {conn?.expires_at && (
+                      <div className="text-xs text-gray-600">Expires: {new Date(conn.expires_at).toLocaleString()}</div>
+                    )}
+                    {conn?.scopes && conn.scopes.length > 0 && (
+                      <div className="text-xs text-gray-600 mt-1">Scopes: {conn.scopes.join(', ')}</div>
+                    )}
+                    {conn?.error_message && (
+                      <div className="text-xs text-red-400 mt-1">{conn.error_message}</div>
+                    )}
+                    <div className="text-xs text-gray-600 mt-2 bg-gray-800 rounded p-2">
+                      {PLATFORM_DOCS[p]}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-            {ALL_AGENTS.map((agent) => {
-              const color = COMPANY_COLORS[agent.company] ?? '#64748B'
-              const enabled = agentToggles[agent.name] ?? true
-              return (
-                <div
-                  key={agent.name}
-                  className="flex items-center justify-between p-2 rounded cursor-pointer"
-                  style={{ background: '#0A0A14', border: `1px solid ${enabled ? color + '44' : '#1E1E3A'}` }}
-                  onClick={() => setAgentToggles((t) => ({ ...t, [agent.name]: !t[agent.name] }))}
-                >
-                  <div>
-                    <div className="font-mono" style={{ fontSize: 8, color: enabled ? color : '#64748B' }}>
-                      {agent.name.toUpperCase()}
-                    </div>
-                    <div className="text-pp-muted" style={{ fontSize: 7 }}>{agent.role}</div>
-                  </div>
-                  <div
-                    className="w-8 h-4 rounded-full relative transition-colors"
-                    style={{ background: enabled ? color + '66' : '#1E1E3A' }}
-                  >
-                    <div
-                      className="absolute top-0.5 w-3 h-3 rounded-full transition-all"
-                      style={{
-                        background: enabled ? color : '#64748B',
-                        left: enabled ? '18px' : '2px',
-                      }}
-                    />
-                  </div>
+        </div>
+
+        <div className="col-span-4 space-y-4">
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <div className="text-xs text-gray-400 font-bold tracking-wider mb-3">AI PROVIDERS</div>
+            <div className="space-y-2">
+              {[
+                { name: 'Gemini 2.0 Flash', env: 'GEMINI_API_KEY', role: 'Planning, reasoning, strategy' },
+                { name: 'NVIDIA NIM', env: 'NVIDIA_API_KEY', role: 'Content generation, drafting' },
+              ].map((ai) => (
+                <div key={ai.name} className="border border-gray-800 rounded p-2">
+                  <div className="text-xs font-bold text-gray-200">{ai.name}</div>
+                  <div className="text-xs text-gray-500">{ai.role}</div>
+                  <div className="text-xs text-gray-600 mt-1">Env: {ai.env}</div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Notification Preferences */}
-        <div className="pixel-card p-4">
-          <h2 className="pixel-text text-pp-gold mb-4" style={{ fontSize: 9 }}>NOTIFICATION PREFERENCES</h2>
-          <div className="space-y-3">
-            {[
-              { key: 'brandDeals', label: 'Brand Deal Alerts', desc: 'Email when a new brand deal is detected' },
-              { key: 'crises', label: 'Crisis Alerts', desc: 'Email when a crisis event is triggered' },
-              { key: 'milestones', label: 'Milestone Alerts', desc: 'Email when follower/impression milestones are hit' },
-            ].map((n) => {
-              const enabled = notifications[n.key as keyof typeof notifications]
-              return (
-                <div
-                  key={n.key}
-                  className="flex items-center justify-between p-3 rounded cursor-pointer"
-                  style={{ background: '#0A0A14', border: '1px solid #1E1E3A' }}
-                  onClick={() => setNotifications((prev) => ({ ...prev, [n.key]: !prev[n.key as keyof typeof notifications] }))}
-                >
-                  <div>
-                    <div className="font-mono" style={{ fontSize: 9, color: '#E2E8F0' }}>{n.label}</div>
-                    <div className="text-pp-muted" style={{ fontSize: 8 }}>{n.desc}</div>
-                  </div>
-                  <div
-                    className="w-8 h-4 rounded-full relative transition-colors"
-                    style={{ background: enabled ? '#22C55E66' : '#1E1E3A' }}
-                  >
-                    <div
-                      className="absolute top-0.5 w-3 h-3 rounded-full transition-all"
-                      style={{ background: enabled ? '#22C55E' : '#64748B', left: enabled ? '18px' : '2px' }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <div className="text-xs text-gray-400 font-bold tracking-wider mb-3">CRON SCHEDULE</div>
+            <div className="space-y-2 text-xs text-gray-500">
+              <div>AI News: 03:00, 09:00, 15:00, 21:00 UTC</div>
+              <div>Analytics: 02:00 UTC daily</div>
+              <div>Health: every 5 min</div>
+              <div>Content Queue: every 15 min</div>
+            </div>
           </div>
-        </div>
 
-        {/* System Actions */}
-        <div className="pixel-card p-4">
-          <h2 className="pixel-text text-pp-gold mb-4" style={{ fontSize: 9 }}>SYSTEM ACTIONS</h2>
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={runSeed}
-              disabled={seedStatus === 'running'}
-              className="px-4 py-2 rounded pixel-text transition-opacity"
-              style={{
-                fontSize: 8,
-                background: seedStatus === 'done' ? '#22C55E22' : '#1E1E3A',
-                color: seedStatus === 'done' ? '#22C55E' : seedStatus === 'error' ? '#EF4444' : '#E2E8F0',
-                border: '1px solid #1E1E3A',
-                opacity: seedStatus === 'running' ? 0.6 : 1,
-              }}
-            >
-              {seedStatus === 'running' ? '⏳ SEEDING...' : seedStatus === 'done' ? '✅ SEEDED' : seedStatus === 'error' ? '❌ ERROR' : '🌱 RUN SEED'}
-            </button>
-            <button
-              onClick={clearCache}
-              disabled={cacheStatus === 'clearing'}
-              className="px-4 py-2 rounded pixel-text transition-opacity"
-              style={{
-                fontSize: 8,
-                background: cacheStatus === 'done' ? '#22C55E22' : '#1E1E3A',
-                color: cacheStatus === 'done' ? '#22C55E' : '#E2E8F0',
-                border: '1px solid #1E1E3A',
-                opacity: cacheStatus === 'clearing' ? 0.6 : 1,
-              }}
-            >
-              {cacheStatus === 'clearing' ? '⏳ CLEARING...' : cacheStatus === 'done' ? '✅ CLEARED' : '🗑️ CLEAR CACHE'}
-            </button>
-            <button
-              onClick={exportAll}
-              className="px-4 py-2 rounded pixel-text"
-              style={{ fontSize: 8, background: '#1E1E3A', color: '#00F0FF', border: '1px solid #00F0FF44' }}
-            >
-              ⬇ EXPORT ALL DATA
-            </button>
-          </div>
-        </div>
-
-        {/* System Info */}
-        <div className="pixel-card p-4">
-          <h2 className="pixel-text text-pp-gold mb-3" style={{ fontSize: 9 }}>SYSTEM INFO</h2>
-          <div className="space-y-1">
-            {[
-              ['Version', '2.0.0'],
-              ['AI Engine', 'Gemini 2.0 Flash'],
-              ['Agents', '31+ across 9 corps'],
-              ['Database', 'Neon Postgres'],
-              ['Hosting', 'Vercel'],
-              ['Deployment', 'https://propost.vercel.app'],
-            ].map(([k, v]) => (
-              <div key={k} className="flex justify-between">
-                <span className="text-pp-muted" style={{ fontSize: 9 }}>{k}</span>
-                <span className="font-mono text-pp-text" style={{ fontSize: 9 }}>{v}</span>
-              </div>
-            ))}
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+            <div className="text-xs text-gray-400 font-bold tracking-wider mb-3">SECURITY</div>
+            <div className="text-xs text-gray-500 space-y-1">
+              <div>All credentials stored in Vercel env vars only.</div>
+              <div>No raw credential values exposed via API.</div>
+              <div>Cron endpoints protected by CRON_SECRET bearer token.</div>
+              <div>Webhook signatures verified via HMAC-SHA256.</div>
+            </div>
           </div>
         </div>
       </div>

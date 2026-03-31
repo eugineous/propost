@@ -1,44 +1,42 @@
+import { NextRequest } from 'next/server'
+import { getDb } from '@/lib/db/client'
+import { propostEvents } from '@/lib/events'
+
 export const dynamic = 'force-dynamic'
-// ============================================================
-// ProPost Empire — Agent Status Route (KV-backed)
-// ============================================================
 
-import { NextResponse } from 'next/server'
-import { getAgentState, ALL_AGENT_NAMES } from '@/lib/agentState'
+export async function GET(_req: NextRequest) {
+  const encoder = new TextEncoder()
 
-export async function GET() {
-  try {
-    const kvStates = await Promise.all(
-      ALL_AGENT_NAMES.map(async (name) => {
-        const s = await getAgentState(name)
-        const hasData = Boolean(s.lastRunAt || s.lastOutcome || s.pauseReason)
-        return {
-          name,
-          status: hasData ? (s.isPaused ? 'paused' : 'ok') : 'no_data',
-          lastRunAt: s.lastRunAt || null,
-          lastOutcome: s.lastOutcome || null,
-          isPaused: s.isPaused,
-          pauseReason: s.pauseReason ?? null,
-        }
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: unknown) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+      }
+
+      // Send current agent statuses on connect
+      try {
+        const db = getDb()
+        const agents = await db`SELECT name, status, last_heartbeat FROM agents ORDER BY name`
+        send({ type: 'initial', agents })
+      } catch {
+        // DB may not be available yet
+      }
+
+      const listener = (event: unknown) => send({ type: 'update', ...event as object })
+      propostEvents.on('agent:status', listener)
+
+      _req.signal.addEventListener('abort', () => {
+        propostEvents.off('agent:status', listener)
+        controller.close()
       })
-    )
+    },
+  })
 
-    const summary = {
-      total: kvStates.length,
-      ok: kvStates.filter((a) => a.status === 'ok').length,
-      paused: kvStates.filter((a) => a.status === 'paused').length,
-      noData: kvStates.filter((a) => a.status === 'no_data').length,
-    }
-
-    return NextResponse.json({
-      ok: true,
-      agents: kvStates,
-      summary,
-      fetchedAt: new Date().toISOString(),
-    })
-  } catch (err) {
-    console.error('[agents/status]', err)
-    return NextResponse.json({ ok: false, error: String(err) }, { status: 500 })
-  }
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    },
+  })
 }
-

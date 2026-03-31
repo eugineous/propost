@@ -1,396 +1,170 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-interface InboxMessage {
+interface ApprovalItem {
   id: string
-  platform: string
-  senderId: string
-  senderUsername: string
-  content: string
-  replyContent: string | null
-  isBrandDeal: boolean
+  task_id?: string
+  action_type: string
+  platform?: string
+  agent_name: string
+  content?: string
+  content_preview?: string
+  risk_level: string
+  risk_score?: number
   status: string
-  receivedAt: string
-  repliedAt: string | null
-  responseTimeMs: number | null
-  agentName: string | null
+  created_at: string
 }
 
-type FilterType = 'all' | 'instagram' | 'facebook' | 'pending' | 'brand_deals'
-
-const PLATFORM_COLORS: Record<string, string> = {
-  instagram: '#E1306C',
-  facebook: '#1877F2',
-  x: '#1DA1F2',
-  linkedin: '#0077B5',
-}
-
-const PLATFORM_ICONS: Record<string, string> = {
-  instagram: '📸',
-  facebook: '👥',
-  x: '🐦',
-  linkedin: '💼',
-}
-
-function getSLAColor(receivedAt: string, status: string): string {
-  if (status === 'replied') return '#22C55E'
-  const mins = (Date.now() - new Date(receivedAt).getTime()) / 60000
-  if (mins < 5) return '#22C55E'
-  if (mins < 15) return '#F59E0B'
-  return '#EF4444'
-}
-
-function getSLALabel(receivedAt: string, status: string): string {
-  if (status === 'replied') return 'REPLIED'
-  const mins = (Date.now() - new Date(receivedAt).getTime()) / 60000
-  if (mins < 1) return '<1m'
-  if (mins < 60) return `${Math.floor(mins)}m`
-  return `${Math.floor(mins / 60)}h`
-}
-
-function ReplyModal({
-  message,
-  onClose,
-  onSent,
-}: {
-  message: InboxMessage
-  onClose: () => void
-  onSent: () => void
-}) {
-  const [reply, setReply] = useState('')
-  const [sending, setSending] = useState(false)
-
-  const send = async () => {
-    if (!reply.trim()) return
-    setSending(true)
-    try {
-      await fetch('/api/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messageId: message.id, reply }),
-      })
-      onSent()
-    } catch {
-      // ignore
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 flex items-center justify-center z-50"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={onClose}
-    >
-      <div
-        className="pixel-card p-4 w-full max-w-md"
-        style={{ background: '#12121F' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <span className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>REPLY TO @{message.senderUsername}</span>
-          <button onClick={onClose} className="text-pp-muted hover:text-pp-text">✕</button>
-        </div>
-        <div className="mb-3 p-2 rounded" style={{ background: '#0A0A14', fontSize: 9, color: '#94A3B8' }}>
-          {message.content}
-        </div>
-        <textarea
-          value={reply}
-          onChange={(e) => setReply(e.target.value)}
-          placeholder="Type your reply..."
-          rows={4}
-          className="w-full p-2 rounded mb-3 font-mono resize-none"
-          style={{ background: '#0A0A14', border: '1px solid #1E1E3A', color: '#E2E8F0', fontSize: 10 }}
-        />
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onClose}
-            className="px-3 py-1 rounded pixel-text"
-            style={{ fontSize: 8, background: '#1E1E3A', color: '#94A3B8' }}
-          >
-            CANCEL
-          </button>
-          <button
-            onClick={send}
-            disabled={sending || !reply.trim()}
-            className="px-3 py-1 rounded pixel-text"
-            style={{ fontSize: 8, background: '#FFD700', color: '#0A0A14', opacity: sending ? 0.6 : 1 }}
-          >
-            {sending ? 'SENDING...' : 'SEND REPLY'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+const RISK_COLOR: Record<string, string> = {
+  low: 'text-green-400 border-green-800',
+  medium: 'text-yellow-400 border-yellow-800',
+  high: 'text-orange-400 border-orange-800',
+  critical: 'text-red-400 border-red-800',
 }
 
 export default function InboxPage() {
-  const [messages, setMessages] = useState<InboxMessage[]>([])
+  const [items, setItems] = useState<ApprovalItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<FilterType>('all')
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const [replyTarget, setReplyTarget] = useState<InboxMessage | null>(null)
-  const [replyingAll, setReplyingAll] = useState(false)
-  const [igData, setIgData] = useState<{ dmsPending: number; account?: { username: string; followers: number } } | null>(null)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [rejectId, setRejectId] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
 
-  const fetchMessages = useCallback(async () => {
-    try {
-      const res = await fetch('/api/inbox')
-      const data = await res.json() as { ok: boolean; messages?: InboxMessage[] }
-      if (data.ok) setMessages(data.messages ?? [])
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const fetchIgLive = useCallback(async () => {
-    try {
-      const res = await fetch('/api/monitor/ig-live')
-      const data = await res.json() as { ok: boolean; dmsPending?: number; account?: { username: string; followers: number } }
-      if (data.ok) setIgData({ dmsPending: data.dmsPending ?? 0, account: data.account })
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchMessages()
-    fetchIgLive()
-    const interval = setInterval(() => {
-      fetchMessages()
-      fetchIgLive()
-    }, 30000)
-    return () => clearInterval(interval)
-  }, [fetchMessages, fetchIgLive])
-
-  const filtered = messages.filter((m) => {
-    if (filter === 'instagram') return m.platform === 'instagram'
-    if (filter === 'facebook') return m.platform === 'facebook'
-    if (filter === 'pending') return m.status === 'pending'
-    if (filter === 'brand_deals') return m.isBrandDeal
-    return true
-  })
-
-  const pendingCount = messages.filter((m) => m.status === 'pending').length
-  const brandDealCount = messages.filter((m) => m.isBrandDeal).length
-
-  const replyAllPending = async () => {
-    setReplyingAll(true)
-    try {
-      await fetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: 'Reply to all pending DMs using CHAT agent', agent: 'chat' }),
-      })
-      setTimeout(fetchMessages, 3000)
-    } catch {
-      // ignore
-    } finally {
-      setReplyingAll(false)
-    }
+  const fetchItems = () => {
+    setLoading(true)
+    fetch('/api/approval-queue?status=pending')
+      .then((r) => r.json())
+      .then((data) => { setItems(Array.isArray(data) ? data : []); setLoading(false) })
+      .catch(() => setLoading(false))
   }
 
-  const FILTERS: { key: FilterType; label: string; count?: number }[] = [
-    { key: 'all', label: 'ALL', count: messages.length },
-    { key: 'instagram', label: '📸 INSTAGRAM' },
-    { key: 'facebook', label: '👥 FACEBOOK' },
-    { key: 'pending', label: '⏳ PENDING', count: pendingCount },
-    { key: 'brand_deals', label: '💰 BRAND DEALS', count: brandDealCount },
-  ]
+  useEffect(() => { fetchItems() }, [])
+
+  const approve = async (id: string, edited?: string) => {
+    await fetch(`/api/approve/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(edited ? { editedContent: edited } : {}),
+    })
+    setEditId(null)
+    fetchItems()
+  }
+
+  const reject = async (id: string, reason: string) => {
+    await fetch(`/api/reject/${id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    })
+    setRejectId(null)
+    setRejectReason('')
+    fetchItems()
+  }
 
   return (
-    <div className="min-h-screen" style={{ background: '#0A0A14', color: '#E2E8F0' }}>
-      {replyTarget && (
-        <ReplyModal
-          message={replyTarget}
-          onClose={() => setReplyTarget(null)}
-          onSent={() => { setReplyTarget(null); fetchMessages() }}
-        />
-      )}
+    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+      <div className="flex items-center gap-4 mb-6">
+        <Link href="/" className="text-gray-500 hover:text-gray-300 text-sm">← Empire</Link>
+        <h1 className="text-lg font-bold text-white">Approval Inbox</h1>
+        <span className="ml-2 px-2 py-0.5 bg-yellow-900 text-yellow-400 rounded text-xs font-bold">{items.length} pending</span>
+        <button onClick={fetchItems} className="ml-auto px-3 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-700">
+          Refresh
+        </button>
+      </div>
 
-      <nav className="flex items-center justify-between px-6 py-3 border-b border-pp-border" style={{ background: '#12121F' }}>
-        <div className="flex items-center gap-6">
-          <Link href="/" className="pixel-text text-pp-gold" style={{ fontSize: 10 }}>← PROPOST EMPIRE</Link>
-          <span className="pixel-text text-pp-accent" style={{ fontSize: 9 }}>📥 UNIFIED INBOX</span>
-        </div>
-        <div className="flex items-center gap-4">
-          {igData?.account && (
-            <span className="font-mono" style={{ fontSize: 8, color: '#E1306C' }}>
-              @{igData.account.username} · {igData.account.followers.toLocaleString()} followers
-            </span>
-          )}
-          {igData && igData.dmsPending > 0 && (
-            <span className="px-2 py-0.5 rounded font-mono" style={{ fontSize: 8, background: '#E1306C22', color: '#E1306C', border: '1px solid #E1306C44' }}>
-              {igData.dmsPending} IG DMs pending
-            </span>
-          )}
-          <span className="pixel-text text-pp-gold" style={{ fontSize: 9 }}>👑 EUGINE MICAH</span>
-        </div>
-      </nav>
+      {loading ? (
+        <div className="text-center text-gray-600 py-20">Loading...</div>
+      ) : items.length === 0 ? (
+        <div className="text-center text-gray-600 py-20">No pending approvals. All clear.</div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item.id} className={`bg-gray-900 border rounded-lg p-4 ${RISK_COLOR[item.risk_level] ?? 'border-gray-700'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold text-gray-200">{item.action_type.replace(/_/g, ' ')}</span>
+                    {item.platform && <span className="text-xs text-gray-500">{item.platform}</span>}
+                    <span className="text-xs text-purple-400">{item.agent_name}</span>
+                    <span className={`text-xs font-bold px-1 rounded border ${RISK_COLOR[item.risk_level]}`}>
+                      {item.risk_level} risk {item.risk_score != null ? `(${item.risk_score})` : ''}
+                    </span>
+                  </div>
 
-      <div className="p-6 max-w-5xl mx-auto space-y-4">
-        {/* Filters + Reply All */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className="px-3 py-1 rounded pixel-text transition-colors flex items-center gap-1"
-              style={{
-                fontSize: 8,
-                background: filter === f.key ? '#FFD700' : '#1E1E3A',
-                color: filter === f.key ? '#0A0A14' : '#E2E8F0',
-              }}
-            >
-              {f.label}
-              {f.count !== undefined && (
-                <span
-                  className="px-1 rounded-full"
-                  style={{
-                    fontSize: 7,
-                    background: filter === f.key ? '#0A0A14' : '#2a2a4a',
-                    color: filter === f.key ? '#FFD700' : '#94A3B8',
-                  }}
-                >
-                  {f.count}
-                </span>
-              )}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-pp-muted font-mono" style={{ fontSize: 8 }}>
-              {filtered.length} messages · auto-refresh 30s
-            </span>
-            {pendingCount > 0 && (
-              <button
-                onClick={replyAllPending}
-                disabled={replyingAll}
-                className="px-3 py-1 rounded pixel-text"
-                style={{ fontSize: 8, background: '#22C55E22', color: '#22C55E', border: '1px solid #22C55E44', opacity: replyingAll ? 0.6 : 1 }}
-              >
-                {replyingAll ? '⏳ REPLYING...' : `⚡ REPLY ALL PENDING (${pendingCount})`}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {loading && (
-          <div className="space-y-2">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="pixel-card p-3 animate-pulse">
-                <div className="h-3 bg-pp-border rounded w-1/4 mb-2" />
-                <div className="h-2 bg-pp-border rounded w-full" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!loading && filtered.length === 0 && (
-          <div className="pixel-card p-8 text-center">
-            <div style={{ fontSize: 24 }}>📭</div>
-            <div className="text-pp-muted mt-2" style={{ fontSize: 10 }}>No messages found.</div>
-          </div>
-        )}
-
-        {filtered.map((msg) => {
-          const slaColor = getSLAColor(msg.receivedAt, msg.status)
-          const slaLabel = getSLALabel(msg.receivedAt, msg.status)
-          const isExpanded = expanded === msg.id
-          const isBrandDeal = msg.isBrandDeal
-
-          return (
-            <div
-              key={msg.id}
-              className="pixel-card p-3 cursor-pointer transition-all"
-              style={{
-                border: isBrandDeal ? '1px solid #FFD70066' : undefined,
-                background: isBrandDeal ? '#0A0A14' : undefined,
-              }}
-              onClick={() => setExpanded(isExpanded ? null : msg.id)}
-            >
-              <div className="flex items-center gap-2">
-                <span style={{ fontSize: 14 }}>{PLATFORM_ICONS[msg.platform] ?? '💬'}</span>
-                <span className="font-mono" style={{ fontSize: 9, color: PLATFORM_COLORS[msg.platform] ?? '#94A3B8' }}>
-                  {msg.platform.toUpperCase()}
-                </span>
-                <span className="text-pp-text font-mono font-semibold" style={{ fontSize: 9 }}>
-                  @{msg.senderUsername}
-                </span>
-                {isBrandDeal && (
-                  <span className="px-1.5 py-0.5 rounded pixel-text" style={{ fontSize: 6, background: '#FFD700', color: '#0A0A14' }}>
-                    💰 BRAND DEAL
-                  </span>
-                )}
-                <span className="ml-auto flex items-center gap-2">
-                  <span
-                    className="px-1.5 py-0.5 rounded font-mono"
-                    style={{ fontSize: 7, background: slaColor + '22', color: slaColor, border: `1px solid ${slaColor}44` }}
-                  >
-                    {slaLabel}
-                  </span>
-                  <span
-                    className="px-1.5 py-0.5 rounded font-mono"
-                    style={{
-                      fontSize: 7,
-                      background: msg.status === 'replied' ? '#22C55E22' : '#F59E0B22',
-                      color: msg.status === 'replied' ? '#22C55E' : '#F59E0B',
-                    }}
-                  >
-                    {msg.status.toUpperCase()}
-                  </span>
-                </span>
-              </div>
-
-              <p className="mt-2 text-pp-text" style={{ fontSize: 10 }}>
-                {isExpanded ? msg.content : (msg.content.length > 120 ? msg.content.slice(0, 120) + '…' : msg.content)}
-              </p>
-
-              {isExpanded && (
-                <div className="mt-3 space-y-2">
-                  {msg.replyContent && (
-                    <div className="border-l-2 border-pp-accent pl-3">
-                      <span className="text-pp-muted" style={{ fontSize: 8 }}>
-                        {msg.agentName ? msg.agentName.toUpperCase() : 'AGENT'} replied:
-                      </span>
-                      <p className="text-pp-accent mt-0.5" style={{ fontSize: 9 }}>{msg.replyContent}</p>
+                  {editId === item.id ? (
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      rows={4}
+                      className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs text-gray-300 focus:outline-none resize-none"
+                    />
+                  ) : (
+                    <div className="text-xs text-gray-400 bg-gray-800 rounded p-3 leading-relaxed">
+                      {item.content ?? item.content_preview ?? '(no content preview)'}
                     </div>
                   )}
-                  <div className="flex items-center gap-4">
-                    <span className="text-pp-muted font-mono" style={{ fontSize: 8 }}>
-                      {new Date(msg.receivedAt).toLocaleString('en-KE')}
-                    </span>
-                    {msg.responseTimeMs && (
-                      <span className="text-pp-muted font-mono" style={{ fontSize: 8 }}>
-                        Response: {(msg.responseTimeMs / 1000).toFixed(1)}s
-                      </span>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setReplyTarget(msg) }}
-                      className="ml-auto px-3 py-1 rounded pixel-text"
-                      style={{ fontSize: 8, background: '#1877F222', color: '#1877F2', border: '1px solid #1877F244' }}
-                    >
-                      ↩ REPLY
-                    </button>
+
+                  {rejectId === item.id && (
+                    <input
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="Rejection reason..."
+                      className="w-full bg-gray-800 border border-red-800 rounded px-3 py-1 text-xs text-gray-300 focus:outline-none"
+                    />
+                  )}
+
+                  <div className="text-xs text-gray-600">
+                    {new Date(item.created_at).toLocaleString()}
                   </div>
                 </div>
-              )}
 
-              {!isExpanded && (
-                <div className="mt-1 text-pp-muted font-mono" style={{ fontSize: 8 }}>
-                  {new Date(msg.receivedAt).toLocaleString('en-KE')}
+                <div className="flex flex-col gap-2 min-w-fit">
+                  {editId === item.id ? (
+                    <>
+                      <button onClick={() => approve(item.id, editContent)}
+                        className="px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-xs font-bold">
+                        Save & Approve
+                      </button>
+                      <button onClick={() => setEditId(null)}
+                        className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+                        Cancel
+                      </button>
+                    </>
+                  ) : rejectId === item.id ? (
+                    <>
+                      <button onClick={() => reject(item.id, rejectReason || 'Rejected by Founder')}
+                        className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-bold">
+                        Confirm Reject
+                      </button>
+                      <button onClick={() => setRejectId(null)}
+                        className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs">
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => approve(item.id)}
+                        className="px-3 py-1 bg-green-700 hover:bg-green-600 rounded text-xs font-bold">
+                        Approve
+                      </button>
+                      <button onClick={() => { setEditId(item.id); setEditContent(item.content ?? '') }}
+                        className="px-3 py-1 bg-blue-800 hover:bg-blue-700 rounded text-xs">
+                        Edit & Approve
+                      </button>
+                      <button onClick={() => setRejectId(item.id)}
+                        className="px-3 py-1 bg-red-900 hover:bg-red-800 rounded text-xs">
+                        Reject
+                      </button>
+                    </>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

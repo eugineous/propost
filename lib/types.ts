@@ -1,237 +1,151 @@
-// ============================================================
-// ProPost Empire — Core Type Definitions
-// ============================================================
+export type Platform = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'website'
 
-export type Corp =
+export type ContentPillar =
+  | 'ai_news'
+  | 'youth_empowerment'
+  | 'trending_topics'
+  | 'elite_conversations'
+  | 'kenyan_entertainment'
+  | 'fashion'
+  | 'media_journalism'
+  | 'personal_story'
+  | 'entrepreneurship'
+  | 'culture_identity'
+
+export type TaskType =
+  | 'post_content'
+  | 'reply'
+  | 'dm_response'
+  | 'thread_publish'
+  | 'reel_publish'
+  | 'story_publish'
+  | 'article_publish'
+  | 'blog_publish'
+  | 'analytics_pull'
+  | 'trend_analysis'
+  | 'seo_audit'
+  | 'health_check'
+  | 'memory_store'
+  | 'report_generate'
+
+export type TaskStatus =
+  | 'queued'
+  | 'assigned'
+  | 'active'
+  | 'pending_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export type AgentStatus = 'idle' | 'active' | 'paused' | 'error' | 'unresponsive'
+
+export type Company =
   | 'xforce'
   | 'linkedelite'
   | 'gramgod'
   | 'pagepower'
   | 'webboss'
   | 'intelcore'
-  | 'hrforce'
-  | 'legalshield'
-  | 'financedesk'
+  | 'system'
 
-export type AgentModel = 'gemini-2.5-pro' | 'nvidia-nim'
+export type AITask = 'plan' | 'draft' | 'analyze' | 'summarize' | 'generate' | 'validate'
 
-export type AgentOutcome = 'success' | 'blocked' | 'error' | 'pending_human'
-
-export type ActivityEventType =
-  | 'agent_action'
-  | 'post_published'
-  | 'post_failed'
-  | 'dm_received'
-  | 'dm_replied'
-  | 'comment_replied'
-  | 'comment_moderated'
-  | 'agent_state_change'
-  | 'trend_detected'
-  | 'crisis_alert'
-  | 'hawk_block'
-  | 'opportunity'
-  | 'metric_update'
-
-export type Platform = 'x' | 'instagram' | 'linkedin' | 'facebook'
-
-export type PostStatus = 'draft' | 'scheduled' | 'published' | 'failed' | 'blocked'
-
-export type PerformanceTier = 'VIRAL' | 'GOOD' | 'WEAK'
-
-export type CrisisLevel = 1 | 2 | 3
-
-// ── Agent Infrastructure ──────────────────────────────────────
-
-export interface GeminiFunctionDeclaration {
-  name: string
-  description: string
-  parameters: {
-    type: 'object'
-    properties: Record<string, { type: string; description?: string }>
-    required: string[]
-  }
-}
-
-export interface AgentContext {
-  agentName: string
-  company: Corp
-  systemPrompt: string
-  tools: GeminiFunctionDeclaration[]
-  model: AgentModel
-}
-
-export interface AgentResult {
-  agentName: string
-  action: string
-  outcome: AgentOutcome
-  data: Record<string, unknown>
-  tokensUsed: number
-  durationMs: number
-}
-
-export interface CommandRoute {
-  intent: string
-  targetCorp: Corp
-  targetAgent: string
-  parameters: Record<string, unknown>
-  priority: 'urgent' | 'normal' | 'background' | 'pending_human'
-}
-
-// ── Cloudflare KV State ───────────────────────────────────────
-
-export interface AgentStateKV {
-  lastRunAt: string
-  lastOutcome: string
-  currentState?: 'idle' | 'active' | 'blocked' | 'error' | 'paused'
-  previousState?: 'idle' | 'active' | 'blocked' | 'error' | 'paused'
-  stateChangedAt?: string
-  rateLimitCounters: {
-    postsToday: number
-    repliesToday: number
-    followsToday: number
-  }
-  isPaused: boolean
-  pauseReason?: string
-}
-
-export interface SessionKV {
-  userId: string
-  email: string
-  accessToken: string
-  expiresAt: number
-}
-
-export interface TrendCacheKV {
-  trends: Array<{ text: string; volume: number }>
-  fetchedAt: string
-}
-
-// ── HAWK ──────────────────────────────────────────────────────
-
-export interface HawkDecision {
-  approved: boolean
-  blockedReasons: string[]
-  riskScore: number // 0–100
-  modifications?: string
-}
-
-// ── X / Twitter ───────────────────────────────────────────────
-
-export interface XPostRequest {
-  content: string
-  mediaUrls?: string[]
-  replyToId?: string
-  scheduledAt?: Date
-}
-
-export interface XPostResult {
-  tweetId: string
-  url: string
-  publishedAt: Date
-  hawkApproval: HawkDecision
-}
-
-// ── Instagram / CHAT ──────────────────────────────────────────
-
-export interface IGMessage {
+export interface Task {
   id: string
-  senderId: string
-  text: string
+  type: TaskType
+  company: Company
+  platform?: Platform
+  assignedAgent?: string
+  parentTaskId?: string
+  status: TaskStatus
+  priority: 1 | 2 | 3
+  contentPillar?: ContentPillar
+  scheduledAt?: Date
+  startedAt?: Date
+  completedAt?: Date
+  result?: unknown
+  error?: string
+  createdAt: Date
+}
+
+export interface Action {
+  id: string
+  taskId?: string
+  agentName: string
+  company: Company
+  platform: Platform
+  actionType: string
+  content?: string
+  status: 'success' | 'failed' | 'pending'
+  platformPostId?: string
+  platformResponse?: unknown
   timestamp: Date
 }
 
-export interface DMContext {
-  senderId: string
-  senderUsername: string
-  messageText: string
-  receivedAt: Date
-  threadHistory: IGMessage[]
+export interface MemoryEntry {
+  id: string
+  agentName: string
+  contextSummary: string
+  relatedActionIds?: string[]
+  platform?: Platform
+  tags?: string[]
+  createdAt: Date
 }
 
-export interface ChatDecision {
-  responseText: string
-  isBrandDeal: boolean
-  detectedTone: 'friendly' | 'professional' | 'hostile' | 'spam'
-  detectedGender: 'male' | 'female' | 'unknown'
-  escalateTo: 'DEAL' | 'EUGINE' | null
-  responseTimeMs: number
+export interface ApprovalQueueItem {
+  id: string
+  taskId?: string
+  actionType: string
+  platform?: Platform
+  agentName: string
+  content?: string
+  contentPreview?: string
+  riskLevel: 'low' | 'medium' | 'high' | 'critical'
+  riskScore?: number
+  failureContext?: unknown
+  status: 'pending' | 'approved' | 'rejected' | 'edited'
+  founderNote?: string
+  editedContent?: string
+  createdAt: Date
+  resolvedAt?: Date
 }
 
-// ── Activity Feed ─────────────────────────────────────────────
+export interface PlatformConnection {
+  id: string
+  platform: Platform
+  status: 'connected' | 'disconnected' | 'expired' | 'error'
+  lastVerified?: Date
+  expiresAt?: Date
+  scopes?: string[]
+  errorMessage?: string
+  updatedAt: Date
+}
+
+export interface FounderMessage {
+  content: string
+  agentName?: string
+}
+
+export interface AgentResponse {
+  content: string
+  agentName: string
+  taskId?: string
+}
 
 export interface ActivityEvent {
-  type: ActivityEventType
+  id: string
+  type: 'post' | 'reply' | 'dm' | 'task_complete' | 'alert' | 'approval'
   agentName: string
-  company: Corp
-  summary: string
-  data: Record<string, unknown>
+  company: Company
+  platform?: Platform
+  contentPreview?: string
   timestamp: string
+  postId?: string
 }
 
-// ── API Contracts ─────────────────────────────────────────────
-
-export interface CommandRequest {
-  text: string
-  attachments?: string[]
-}
-
-export interface CommandResponse {
-  commandId: string
-  intent: string
-  routedTo: { corp: Corp; agent: string }
-  status: 'executing' | 'queued' | 'blocked_by_hawk' | 'needs_human'
-  preview?: string
-  estimatedCompletionMs?: number
-}
-
-export interface OverrideRequest {
-  command: 'PAUSE' | 'RESUME' | 'OVERRIDE' | 'STATUS'
-  scope: 'all' | Corp | string
-  reason?: string
-  content?: string
-}
-
-export interface OverrideResponse {
-  applied: boolean
-  affectedAgents: string[]
-  message: string
-}
-
-// ── Crisis ────────────────────────────────────────────────────
-
-export interface CrisisTrigger {
-  level: CrisisLevel
-  description: string
-  pauseScope: 'none' | Corp | 'all'
-  notifyEugine: boolean
-}
-
-// ── Performance ───────────────────────────────────────────────
-
-export interface PostMetrics {
-  impressions: number
-  likes: number
-  reposts: number
-  replies: number
-  newFollowers: number
-}
-
-// ── Canvas / Pixel Art ────────────────────────────────────────
-
-export type CharacterState = 'idle' | 'active' | 'blocked' | 'paused'
-
-export interface CanvasAgent {
-  name: string
-  state: CharacterState
-  animFrame: number
-  position: { x: number; y: number }
-  lastAction?: string
-}
-
-export interface CanvasRoom {
-  corp: Corp
-  label: string
-  position: { x: number; y: number; w: number; h: number }
-  agents: CanvasAgent[]
-  color: string
+export interface AgentStatusEvent {
+  agentName: string
+  status: AgentStatus
+  currentTask?: string
+  lastActionTime?: string
 }

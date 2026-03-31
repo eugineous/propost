@@ -1,240 +1,66 @@
-export const dynamic = 'force-dynamic'
-import { NextRequest, NextResponse } from 'next/server'
-import { validateCronSecret } from '@/lib/cronAuth'
-import { hawkReview } from '@/lib/hawk'
-import { run as blazeRun } from '@/agents/xforce/blaze'
-import { getMentions, postTweet, replyToTweet } from '@/lib/platforms/x'
-import { incrementRateLimit } from '@/lib/agentState'
-import { db } from '@/lib/db'
-import { posts, agentActions } from '@/lib/schema'
-import { and, asc, eq, lte } from 'drizzle-orm'
+// POST /api/cron/x-post
+// Triggered hourly by Cloudflare Worker.
+// Generates X content via BLAZE and publishes via XAdapter (API) or
+// queues for browser automation fallback via X Browser Poster worker.
 
-export async function GET(req: NextRequest) {
-  if (!validateCronSecret(req)) {
+import { NextRequest, NextResponse } from 'next/server'
+import { verifyCronSecret } from '@/lib/cron/auth'
+import { taskOrchestrator } from '@/lib/tasks/orchestrator'
+import { logInfo, logWarn } from '@/lib/logger'
+import { getBestTopic } from '@/lib/content/ai-news-source'
+import { formatContent } from '@/lib/content/formatter'
+import { getDb, withRetry } from '@/lib/db/client'
+import { hawk } from '@/lib/hawk/engine'
+
+export async function POST(req: NextRequest) {
+  if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  logInfo('[Cron/x-post] Starting hourly X post')
+
   try {
-    // 1) Publish any scheduled post that is due
-    const now = new Date()
-    const [due] = await db
-      .select()
-      .from(posts)
-      .where(and(eq(posts.platform, 'x'), eq(posts.status, 'scheduled'), lte(posts.scheduledAt, now)))
-      .orderBy(asc(posts.scheduledAt))
-      .limit(1)
-
-    if (due) {
-      // Safety: if not hawk approved, run review now.
-      if (!due.hawkApproved) {
-        const decision = await hawkReview(due.content, 'x', due.agentName)
-        if (!decision.approved) {
-          await db.update(posts).set({ status: 'blocked', hawkApproved: false, hawkRiskScore: decision.riskScore }).where(eq(posts.id, due.id))
-          return NextResponse.json({ ok: false, reason: 'HAWK blocked scheduled post', blockedReasons: decision.blockedReasons })
-        }
-        await db.update(posts).set({ hawkApproved: true, hawkRiskScore: decision.riskScore }).where(eq(posts.id, due.id))
-      }
-
-      const { tweetId, url } = await postTweet(due.content)
-      await incrementRateLimit(due.agentName, 'postsToday')
-
-      await db.update(posts).set({
-        status: 'published',
-        platformId: tweetId,
-        publishedAt: now,
-      }).where(eq(posts.id, due.id))
-
-      await db.insert(agentActions).values({
-        agentName: due.agentName,
-        company: 'xforce',
-        actionType: 'post_published',
-        details: {
-          platform: 'x',
-          platformPostId: tweetId,
-          platformUrl: url,
-          postId: due.id,
-          contentPreview: due.content.slice(0, 160),
-        },
-        outcome: 'success',
-      })
-
-      // Also handle any pending mentions after publishing
-      await handleMentions()
-
-      return NextResponse.json({ ok: true, mode: 'scheduled', tweetId, url, postId: due.id })
+    // HAWK rate limit check before doing anything
+    const allowed = await hawk.checkRateLimit('x')
+    if (!allowed.allowed) {
+      logWarn('[Cron/x-post] HAWK rate limit reached for X — skipping this cycle')
+      return NextResponse.json({ skipped: true, reason: 'rate_limit' })
     }
 
-    // 2) Run BLAZE to generate content
-    const blazeResult = await blazeRun('Generate a tweet for Eugine Micah based on current trends and content pillars')
+    // Get best topic
+    const topic = await getBestTopic()
+    const formatted = formatContent(`${topic.headline}\n\n${topic.summary}`, 'x', 'ai_news')
 
-    let content = ''
-    try {
-      const raw = blazeResult.data.response as string
-      const jsonMatch = raw.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as { tweets?: Array<{ text: string }> }
-        content = parsed.tweets?.[0]?.text ?? ''
-      }
-    } catch {
-      content = blazeResult.data.response as string
-    }
+    // Queue content
+    const db = getDb()
+    await withRetry(() =>
+      db`
+        INSERT INTO content_queue (platform, content_pillar, content, status, created_by)
+        VALUES ('x', 'ai_news', ${formatted.content}, 'scheduled', 'cron-x-post')
+      `
+    )
 
-    if (!content) {
-      // No content generated — still handle mentions before returning
-      await handleMentions()
-      return NextResponse.json({ ok: false, reason: 'BLAZE produced no content' })
-    }
-
-    // HAWK review
-    const decision = await hawkReview(content, 'x', 'blaze')
-
-    if (!decision.approved) {
-      await handleMentions()
-      return NextResponse.json({ ok: false, reason: 'HAWK blocked', blockedReasons: decision.blockedReasons })
-    }
-
-    // 3) Publish
-    let tweetId: string, url: string
-    try {
-      const result = await postTweet(content)
-      tweetId = result.tweetId
-      url = result.url
-    } catch (postErr) {
-      const msg = String(postErr)
-      if (msg.includes('X_CREDITS_DEPLETED')) {
-        // Save as draft — will be published when credits reset
-        await db.insert(posts).values({
-          platform: 'x', content, status: 'draft', agentName: 'blaze',
-          hawkApproved: true, hawkRiskScore: decision.riskScore,
-        })
-        await db.insert(agentActions).values({
-          agentName: 'blaze', company: 'xforce', actionType: 'post_queued_credits',
-          details: { platform: 'x', reason: 'X free tier credits depleted — post saved as draft', contentPreview: content.slice(0, 160) },
-          outcome: 'success',
-        })
-        return NextResponse.json({ ok: true, mode: 'draft_queued', reason: 'X credits depleted — post saved as draft, will publish when credits reset' })
-      }
-      throw postErr
-    }
-
-    // Increment rate limit counter
-    await incrementRateLimit('blaze', 'postsToday')
-
-    // 4) Save to posts table
-    await db.insert(posts).values({
-      platform: 'x',
-      content,
-      status: 'published',
-      platformId: tweetId,
-      publishedAt: new Date(),
-      agentName: 'blaze',
-      hawkApproved: true,
-      hawkRiskScore: decision.riskScore,
-    })
-
-    // 5) Log to agentActions
-    await db.insert(agentActions).values({
-      agentName: 'blaze',
+    // Create task for BLAZE (XForce post executor)
+    const task = await taskOrchestrator.createTask({
+      type: 'post_content',
       company: 'xforce',
-      actionType: 'post_published',
-      details: {
-        platform: 'x',
-        platformPostId: tweetId,
-        platformUrl: url,
-        contentPreview: content.slice(0, 160),
-      },
-      outcome: 'success',
+      platform: 'x',
+      contentPillar: 'ai_news',
+      priority: 1,
+      assignedAgent: 'BLAZE',
     })
 
-    // 6) Handle any pending mentions
-    const mentionsSummary = await handleMentions()
+    logInfo('[Cron/x-post] Task created for BLAZE', { taskId: task.id, headline: topic.headline })
 
-    return NextResponse.json({ ok: true, tweetId, url, mentions: mentionsSummary })
+    return NextResponse.json({
+      ok: true,
+      taskId: task.id,
+      headline: topic.headline,
+      contentLength: formatted.content.length,
+    })
   } catch (err) {
-    console.error('[cron/x-post]', err)
-    // Log failure to agent_actions so it's visible in the dashboard
-    try {
-      await db.insert(agentActions).values({
-        agentName: 'blaze',
-        company: 'xforce',
-        actionType: 'post_failed',
-        details: {
-          platform: 'x',
-          failureReason: String(err).slice(0, 300),
-          summary: `X post failed: ${String(err).slice(0, 100)}`,
-        },
-        outcome: 'error',
-      })
-    } catch { /* ignore secondary DB error */ }
-    return NextResponse.json({ error: 'X post failed', detail: String(err).slice(0, 200) }, { status: 500 })
+    const msg = err instanceof Error ? err.message : String(err)
+    logWarn('[Cron/x-post] Failed', { error: msg })
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
-}
-
-/**
- * Fetch recent mentions and reply to each one using BLAZE-generated text.
- * Non-critical: failures are caught and logged rather than propagated.
- */
-async function handleMentions(): Promise<{ replied: number; errors: number }> {
-  let replied = 0
-  let errors = 0
-
-  try {
-    const mentions = await getMentions()
-
-    for (const mention of mentions) {
-      try {
-        // Ask BLAZE to craft a reply
-        const blazeResult = await blazeRun(
-          `Write a short, friendly reply to this mention on X: "${mention.text}". Keep it under 200 characters.`
-        )
-
-        let replyText = ''
-        try {
-          const raw = blazeResult.data.response as string
-          const jsonMatch = raw.match(/\{[\s\S]*\}/)
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]) as { reply?: string; text?: string }
-            replyText = parsed.reply ?? parsed.text ?? ''
-          }
-          if (!replyText) replyText = raw.trim()
-        } catch {
-          replyText = blazeResult.data.response as string
-        }
-
-        if (!replyText) continue
-
-        // HAWK review before replying
-        const decision = await hawkReview(replyText, 'x', 'blaze')
-        if (!decision.approved) {
-          errors++
-          continue
-        }
-
-        const { tweetId } = await replyToTweet(replyText, mention.id)
-
-        await db.insert(agentActions).values({
-          agentName: 'blaze',
-          company: 'xforce',
-          actionType: 'mention_replied',
-          details: {
-            platform: 'x',
-            originalTweetId: mention.id,
-            replyTweetId: tweetId,
-            contentPreview: replyText.slice(0, 160),
-          },
-          outcome: 'success',
-        })
-
-        replied++
-      } catch (mentionErr) {
-        console.error('[cron/x-post] mention reply error', mentionErr)
-        errors++
-      }
-    }
-  } catch (err) {
-    console.error('[cron/x-post] getMentions error', err)
-    errors++
-  }
-
-  return { replied, errors }
 }

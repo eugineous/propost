@@ -1,27 +1,16 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: 'ProPost Empire — Command Center',
-  description: 'Autonomous Social Media Empire for Eugine Micah',
+  title: 'ProPost — Empire Command Center',
+  description: 'Multi-agent social media operating system',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="bg-pp-bg text-pp-text min-h-screen">
-        <Providers>{children}</Providers>
+    <html lang="en" className="dark">
+      <body className="bg-gray-950 text-gray-100 min-h-screen font-mono antialiased">
+        {children}
       </body>
     </html>
   )

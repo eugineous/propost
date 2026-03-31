@@ -1,47 +1,20 @@
-export const dynamic = 'force-dynamic'
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { db } from '@/lib/db'
-import { platformConnections } from '@/lib/schema'
+import { NextResponse } from 'next/server'
+import { getDb } from '@/lib/db/client'
 
-const ALL_PLATFORMS = ['instagram', 'facebook', 'linkedin', 'x', 'tiktok']
-
-export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const rows = await db.select({
-    platform:         platformConnections.platform,
-    expiresAt:        platformConnections.expiresAt,
-    scope:            platformConnections.scope,
-    platformUserId:   platformConnections.platformUserId,
-    platformUsername: platformConnections.platformUsername,
-    updatedAt:        platformConnections.updatedAt,
-  }).from(platformConnections)
-
-  const connectedMap = new Map(rows.map(r => [r.platform, r]))
-
-  const result = ALL_PLATFORMS.map(platform => {
-    const row = connectedMap.get(platform)
-    if (!row) return { platform, connected: false }
-
-    const now = Date.now()
-    const expiresAt = row.expiresAt
-    const daysUntilExpiry = expiresAt
-      ? Math.max(0, Math.floor((expiresAt.getTime() - now) / 86400000))
-      : null
-
-    return {
-      platform,
-      connected: true,
-      platformUsername: row.platformUsername ?? null,
-      expiresAt: expiresAt?.toISOString() ?? null,
-      daysUntilExpiry,
-      scope: row.scope ?? null,
-      lastUpdated: row.updatedAt?.toISOString() ?? null,
-    }
-  })
-
-  return NextResponse.json(result)
+export async function GET() {
+  try {
+    const db = getDb()
+    // Never expose raw credential values — only status metadata
+    const rows = await db`
+      SELECT id, platform, status, last_verified, expires_at, scopes, error_message, updated_at
+      FROM platform_connections
+      ORDER BY platform
+    `
+    return NextResponse.json(rows)
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Failed to fetch connections' },
+      { status: 500 }
+    )
+  }
 }
