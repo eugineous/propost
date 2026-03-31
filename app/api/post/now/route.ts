@@ -32,6 +32,53 @@ interface PostResult {
   error?: string
 }
 
+// ─── Browser poster fallback (X) ─────────────────────────────────────────────
+
+async function postViaXBrowserPoster(content: string): Promise<{ success: boolean; postId?: string; url?: string; error?: string }> {
+  const browserPosterUrl = process.env.X_BROWSER_POSTER_URL
+  const internalSecret = process.env.INTERNAL_SECRET
+
+  if (!browserPosterUrl || !internalSecret) {
+    return { success: false, error: 'X_BROWSER_POSTER_URL not configured' }
+  }
+
+  try {
+    const res = await fetch(`${browserPosterUrl}/post`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-internal-secret': internalSecret,
+      },
+      body: JSON.stringify({ content }),
+    })
+
+    const data = await res.json() as { ok: boolean; error?: string; preview?: string }
+
+    if (!res.ok || !data.ok) {
+      return { success: false, error: data.error ?? `Browser poster returned ${res.status}` }
+    }
+
+    return { success: true, url: 'https://x.com' }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// ─── Approval queue fallback ──────────────────────────────────────────────────
+
+async function queueForApproval(platform: string, content: string, reason: string): Promise<void> {
+  try {
+    const { getDb, withRetry } = await import('@/lib/db/client')
+    const db = getDb()
+    await withRetry(() =>
+      db`
+        INSERT INTO approval_queue (action_type, platform, agent_name, content, content_preview, risk_level, risk_score, status, failure_context)
+        VALUES ('post_now', ${platform}, 'BLAZE', ${content}, ${content.slice(0, 100)}, 'medium', 30, 'pending', ${JSON.stringify({ reason, fallbacksExhausted: true })})
+      `
+    )
+  } catch { /* non-fatal */ }
+}
+
 async function postToXNow(content: string): Promise<PostResult> {
   try {
     const rateStatus = await hawk.checkRateLimit('x')
@@ -43,23 +90,46 @@ async function postToXNow(content: string): Promise<PostResult> {
     if (delay > 0) await new Promise((r) => setTimeout(r, Math.min(delay, 3000)))
 
     const xAdapter = getPlatformAdapter('x')
-    const result = await xAdapter.post({ text: content.slice(0, 280) })
+    let result: { success: boolean; postId?: string; url?: string; rawResponse?: unknown }
+    let method = 'api'
+
+    try {
+      result = await xAdapter.post({ text: content.slice(0, 280) })
+    } catch (apiErr) {
+      const errMsg = apiErr instanceof Error ? apiErr.message : String(apiErr)
+      const isCreditsError = errMsg.includes('CreditsDepleted') || errMsg.includes('402')
+      const isForbidden = errMsg.includes('403') || errMsg.includes('Forbidden')
+
+      if (isCreditsError || isForbidden) {
+        // X API requires paid plan — fall back to browser poster
+        logInfo(`[post/now] X API credits depleted, trying browser poster fallback`)
+        const browserResult = await postViaXBrowserPoster(content)
+        if (browserResult.success) {
+          result = { success: true, postId: browserResult.postId, url: browserResult.url, rawResponse: { method: 'browser_poster' } }
+          method = 'browser_poster'
+        } else {
+          // Both failed — queue for approval
+          await queueForApproval('x', content, errMsg)
+          return { platform: 'x', success: false, error: `API: ${errMsg} | Browser: ${browserResult.error} — queued for approval` }
+        }
+      } else {
+        throw apiErr
+      }
+    }
 
     await hawk.recordAction('x')
 
-    // Log to DB
     await logAction({
       agentName: 'BLAZE',
       company: 'xforce',
       platform: 'x',
-      actionType: 'post_now',
+      actionType: method === 'browser_poster' ? 'post_browser' : 'post_now',
       content,
       status: 'success',
       platformPostId: result.postId,
       platformResponse: result.rawResponse,
     })
 
-    // Emit live activity event
     propostEvents.emit('activity', {
       id: result.postId ?? crypto.randomUUID(),
       type: 'post',
@@ -71,7 +141,7 @@ async function postToXNow(content: string): Promise<PostResult> {
       postId: result.postId,
     })
 
-    logInfo(`[post/now] X post published: ${result.postId}`)
+    logInfo(`[post/now] X post published via ${method}: ${result.postId ?? 'browser'}`)
     return { platform: 'x', success: true, postId: result.postId, url: result.url, content }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
