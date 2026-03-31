@@ -67,10 +67,22 @@ export class SOVEREIGN extends BaseAgent {
     await this.setStatus('active')
 
     try {
-      // Use AI Router to generate a structured action plan
       const planResponse = await aiRouter.route(
         'plan',
-        message.content,
+        `You are SOVEREIGN, the supreme intelligence of ProPost — Eugine Micah's social media empire.
+        
+        Eugine Micah is a Media Entrepreneur & Storytelling Strategist based in Nairobi, Kenya.
+        He runs Urban News (StarTimes Ch.430, 2M+ weekly reach), The Nairobi Podcast, and is Head of Digital at PPP TV Kenya.
+        
+        Founder command: "${message.content}"
+        
+        Analyze this command and produce:
+        1. Which companies/platforms are involved
+        2. What specific actions to take
+        3. Which agents to dispatch
+        4. Priority level (1=urgent, 2=normal, 3=low)
+        
+        Be strategic. Think like a media company CEO.`,
         { role: 'SOVEREIGN', context: 'founder_command' }
       )
 

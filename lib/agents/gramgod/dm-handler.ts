@@ -44,12 +44,20 @@ export class CHAT extends BaseAgent {
       }
 
       // 3. Generate reply for non-spam
+      const dmTier = category === 'brand_inquiry' ? 'Tier 1 (brand/collab)' : 'Tier 2-3 (fan/community)'
       const replyResponse = await aiRouter.route(
         'draft',
-        `Write a reply to this Instagram DM from a ${category}. 
-        DM: "${dmContent}"
-        Be authentic, warm, and represent Eugine Micah's brand. 
-        Keep it concise (under 200 characters). No AI filler phrases.`,
+        `Write a reply to this Instagram DM. DM category: ${dmTier}.
+        DM content: "${dmContent}"
+        
+        VOICE RULES:
+        - If brand inquiry: Professional + warm. Ask for brief. Route to euginemicah@gmail.com.
+        - If fan: Personal, warm, brief. Make them feel seen. Use Sheng if they wrote in Sheng.
+        - NEVER use: "I hope this helps", "excited to share", "as an AI"
+        - Use em dashes (—) not hyphens. Contractions are fine.
+        - Under 200 characters. Sound like Eugine Micah, not a bot.
+        
+        If message is over 48h old, open with: "Just caught up on DMs — sorry for the delay."`,
         { role: 'CHAT', platform: 'instagram', dmCategory: category }
       )
 

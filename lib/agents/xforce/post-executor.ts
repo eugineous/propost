@@ -1,17 +1,33 @@
 // BLAZE — XForce Tier 3 post executor
 // Handles X posts and threads with HAWK rate limiting
+// Writes in Eugine Micah's voice — sharp, culturally grounded, authority-driven
 
 import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
 import { hawk } from '../../hawk/engine'
 import { getPlatformAdapter } from '../../platforms/index'
 import { logAction, logInfo, logError } from '../../logger'
+import { PLATFORM_PROMPTS } from '../../brand/context'
 import type { Task } from '../../types'
 
 const THREAD_PART_DELAY_MS = 2000
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+// Pillar-specific X post prompts
+const PILLAR_PROMPTS: Record<string, string> = {
+  ai_news: `Write a sharp X post about this AI news story. Under 280 characters. Lead with what CHANGED. Add the Kenyan/African angle. End with a provocative question or take. No AI filler phrases. Use em dashes (—) not hyphens.`,
+  trending_topics: `Write a hot take X post on this trending topic. Under 200 characters. Polarizing but not toxic. Take a clear position. No hedging.`,
+  elite_conversations: `Write an X post for an elite conversation thread. Under 280 characters. Something the top 1% talks about. Sharp. Quotable.`,
+  youth_empowerment: `Write an X post for young Kenyans. Under 280 characters. Real talk about money, confidence, or getting ahead. Not preachy — specific.`,
+  kenyan_entertainment: `Write an X post about Kenyan entertainment. Under 280 characters. Commentary, not just reporting. Give the take nobody else is giving.`,
+  personal_story: `Write an X post from Eugine's personal story. Under 280 characters. Specific moment. Universal lesson.`,
+  entrepreneurship: `Write an X post about entrepreneurship. Under 280 characters. Building, pitching, or monetizing. Real and specific.`,
+  culture_identity: `Write an X post about Kenyan culture or identity. Under 280 characters. Nairobi lens. Culturally grounded.`,
+  media_journalism: `Write an X post about media or journalism. Under 280 characters. Industry insider perspective. Sharp.`,
+  fashion: `Write an X post about fashion. Under 280 characters. Style as communication. Nairobi aesthetic.`,
 }
 
 export class BLAZE extends BaseAgent {
@@ -42,11 +58,12 @@ export class BLAZE extends BaseAgent {
       let content: string = (taskData?.content as string) ?? ''
 
       if (!content) {
-        const pillarContext = task.contentPillar ? `Content pillar: ${task.contentPillar}. ` : ''
+        const pillar = task.contentPillar ?? 'ai_news'
+        const pillarPrompt = PILLAR_PROMPTS[pillar] ?? PILLAR_PROMPTS.ai_news
         const generated = await aiRouter.route(
           'generate',
-          `${pillarContext}Write a compelling X (Twitter) post for Eugine Micah. Keep it under 280 characters. Be authentic, culturally grounded, and authority-driven.`,
-          { platform: 'x', contentPillar: task.contentPillar, taskId: task.id }
+          pillarPrompt,
+          { platform: 'x', contentPillar: pillar, taskId: task.id, systemPrompt: PLATFORM_PROMPTS.x }
         )
         content = generated.content
       }
