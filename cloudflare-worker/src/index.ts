@@ -69,6 +69,7 @@ interface CronJob {
 
 const CRON_JOBS: CronJob[] = [
   { path: '/api/cron/health', label: 'health-check', shouldRun: () => true },
+  { path: '/api/agents/work', label: 'agent-work', shouldRun: () => true },
   { path: '/api/cron/content-schedule', label: 'content-schedule', shouldRun: (d) => d.getUTCMinutes() % 15 === 0 },
   { path: '/api/cron/ai-news', label: 'ai-news', shouldRun: (d) => d.getUTCMinutes() === 0 && [3, 9, 15, 21].includes(d.getUTCHours()) },
   { path: '/api/cron/analytics', label: 'analytics', shouldRun: (d) => d.getUTCHours() === 2 && d.getUTCMinutes() === 0 },
