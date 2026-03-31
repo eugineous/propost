@@ -130,65 +130,31 @@ const PLATFORMS = [
 ]
 
 // ─── Isolated browser window opener ──────────────────────────────────────────
-// Opens a completely clean browser context with no personal data
-// Uses about:blank first, then navigates — forces a fresh session
+// Opens a popup window navigating DIRECTLY to the login URL.
+// We use a unique window name each time so Chrome treats it as a fresh window.
+// The popup has no opener reference (noopener) so it can't access parent state.
 
 function openIsolatedBrowser(loginUrl: string, platformId: string): Window | null {
-  // Try to open with noopener + noreferrer to get a clean context
-  // The key is using window.open with specific features that isolate it
   const features = [
     'width=520',
     'height=720',
     'scrollbars=yes',
     'resizable=yes',
-    'toolbar=no',
+    'toolbar=yes',
     'menubar=no',
     'location=yes',
     'status=no',
-    'directories=no',
-    'noopener',
   ].join(',')
 
-  // Open a blank window first
-  const popup = window.open('about:blank', `propost_login_${platformId}_${Date.now()}`, features)
+  // Navigate directly to the login URL — no intermediate page
+  // Unique name ensures a brand new window every time (not reusing an old tab)
+  const popup = window.open(
+    loginUrl,
+    `propost_${platformId}_${Date.now()}`,
+    features
+  )
 
-  if (!popup) return null
-
-  // Write a redirect page that clears storage before navigating
-  // This ensures no cookies/localStorage from the parent window bleed in
-  popup.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>ProPost — Connecting ${platformId}...</title>
-      <style>
-        body { background: #0a0a0a; color: #fff; font-family: system-ui; 
-               display: flex; align-items: center; justify-content: center; 
-               height: 100vh; margin: 0; flex-direction: column; gap: 16px; }
-        .spinner { width: 32px; height: 32px; border: 3px solid #333; 
-                   border-top-color: #7c3aed; border-radius: 50%; 
-                   animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        p { color: #888; font-size: 14px; }
-        strong { color: #fff; }
-      </style>
-    </head>
-    <body>
-      <div class="spinner"></div>
-      <strong>Opening ${platformId} login...</strong>
-      <p>This is a clean, isolated session — not your personal browser.</p>
-      <script>
-        // Clear any existing session data in this window
-        try { localStorage.clear(); sessionStorage.clear(); } catch(e) {}
-        // Navigate to the login page
-        setTimeout(() => { window.location.href = ${JSON.stringify(loginUrl)}; }, 800);
-      </script>
-    </body>
-    </html>
-  `)
-  popup.document.close()
-
-  return popup
+  return popup ?? null
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -246,7 +212,7 @@ export default function ConnectPage() {
     const popup = openIsolatedBrowser(loginUrl, platformId)
 
     if (!popup) {
-      setResults(prev => ({ ...prev, [platformId]: { ok: false, error: 'Popup blocked — allow popups for propost.vercel.app in your browser settings.' } }))
+      setResults(prev => ({ ...prev, [platformId]: { ok: false, error: 'Popup blocked — click the address bar icon in Chrome and allow popups for propost.vercel.app, then try again.' } }))
       return
     }
 
@@ -407,7 +373,8 @@ export default function ConnectPage() {
                       {/* Status messages */}
                       {step === 'waiting' && (
                         <div className="mt-3 p-2 bg-blue-900/20 border border-blue-800/30 rounded text-xs text-blue-300">
-                          🔐 <strong>Log into {platform.name} in the isolated window.</strong> It has no connection to your personal Chrome — completely clean. When you see your feed/home page, click "I've Logged In" above.
+                          🔐 <strong>A new window opened with {platform.name}'s login page.</strong> Log in with your account credentials. When you see your home feed or dashboard, come back here and click "I've Logged In" above.
+                          <div className="mt-1 text-gray-500">If the window is blank or blocked, look for a popup blocked icon in your Chrome address bar and click "Always allow".</div>
                         </div>
                       )}
 
