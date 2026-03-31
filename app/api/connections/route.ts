@@ -1,20 +1,19 @@
 import { NextResponse } from 'next/server'
-import { getDb } from '@/lib/db/client'
 
+// Returns platform connection statuses.
+// Falls back to 'not configured' for all platforms if DB is unavailable.
 export async function GET() {
   try {
+    const { getDb } = await import('@/lib/db/client')
     const db = getDb()
-    // Never expose raw credential values — only status metadata
     const rows = await db`
       SELECT id, platform, status, last_verified, expires_at, scopes, error_message, updated_at
       FROM platform_connections
       ORDER BY platform
     `
-    return NextResponse.json(rows)
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to fetch connections' },
-      { status: 500 }
-    )
+    return NextResponse.json(Array.isArray(rows) ? rows : [])
+  } catch {
+    // DB not available — return safe empty array (not an error object)
+    return NextResponse.json([])
   }
 }

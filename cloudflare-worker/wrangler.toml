@@ -11,12 +11,12 @@ crons = ["*/5 * * * *"]
 # Create with: wrangler kv:namespace create WEBHOOK_KV
 [[kv_namespaces]]
 binding = "WEBHOOK_KV"
-id = "REPLACE_WITH_WEBHOOK_KV_ID"
+id = "1ed3ccbd7a104394a4e050a01256bd2f"
 
 # Create with: wrangler kv:namespace create AGENT_STATE_KV
 [[kv_namespaces]]
 binding = "AGENT_STATE_KV"
-id = "REPLACE_WITH_AGENT_STATE_KV_ID"
+id = "1355f4cf157642a3a97f7537accd32b2"
 
 # ── Queues ────────────────────────────────────────────────────────────────────
 # Create with: wrangler queues create propost-task-queue

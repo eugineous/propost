@@ -25,7 +25,10 @@ export default function SettingsPage() {
   const [connections, setConnections] = useState<PlatformConn[]>([])
 
   useEffect(() => {
-    fetch('/api/connections').then((r) => r.json()).then(setConnections).catch(() => {})
+    fetch('/api/connections')
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => Array.isArray(data) ? setConnections(data) : setConnections([]))
+      .catch(() => setConnections([]))
   }, [])
 
   return (
