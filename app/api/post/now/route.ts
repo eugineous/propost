@@ -336,7 +336,7 @@ export async function POST(req: NextRequest) {
   const results: PostResult[] = []
 
   try {
-    const topic = await getBestTopic()
+    const topic = await getBestTopic().catch(() => ({ headline: 'AI is transforming how Nairobi works, creates, and connects', summary: 'Artificial intelligence tools are becoming essential for Kenyan creators, entrepreneurs, and media professionals.' }))
     const topicText = body.topic ?? topic.headline
     const summary = topic.summary
 
