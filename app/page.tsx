@@ -291,6 +291,7 @@ export default function EmpireOverview() {
           <Link href="/memory" className="hover:text-white transition-colors">Memory</Link>
           <Link href="/office" className="hover:text-white transition-colors">Office</Link>
           <Link href="/connect" className="hover:text-white transition-colors text-blue-400">Connect</Link>
+          <Link href="/make" className="hover:text-white transition-colors text-yellow-400">Make.com</Link>
           <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
         </div>
       </nav>

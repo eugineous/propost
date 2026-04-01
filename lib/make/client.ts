@@ -66,14 +66,31 @@ export function isMakeConfigured(platform: string): boolean {
 
 // Send content to Make webhook for a platform
 export async function postViaMake(payload: MakePostPayload): Promise<MakePostResult> {
-  const webhookUrl = getMakeWebhookUrl(payload.platform)
+  let webhookUrl = getMakeWebhookUrl(payload.platform)
+
+  // Fallback: check DB for saved webhook URL
+  if (!webhookUrl) {
+    try {
+      const { getDb } = await import('../db/client')
+      const db = getDb()
+      const rows = await db`
+        SELECT error_message FROM platform_connections
+        WHERE platform = ${`make_${payload.platform}`} AND status = 'connected'
+        LIMIT 1
+      `
+      const row = (rows as Array<{ error_message: string | null }>)[0]
+      if (row?.error_message?.startsWith('https://hook.')) {
+        webhookUrl = row.error_message
+      }
+    } catch { /* ignore DB errors */ }
+  }
 
   if (!webhookUrl) {
     return {
       ok: false,
       platform: payload.platform,
       method: 'make_webhook',
-      error: `MAKE_WEBHOOK_${payload.platform.toUpperCase()} not configured. Add it in Vercel env vars.`,
+      error: `MAKE_WEBHOOK_${payload.platform.toUpperCase()} not configured. Add it in Vercel env vars or via /make setup page.`,
     }
   }
 
