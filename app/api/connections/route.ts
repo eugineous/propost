@@ -3,7 +3,7 @@
 
 import { NextResponse } from 'next/server'
 
-const PLATFORMS = ['x', 'instagram', 'facebook', 'linkedin', 'website'] as const
+const PLATFORMS = ['x', 'instagram', 'facebook', 'linkedin', 'website', 'tiktok', 'youtube', 'reddit', 'mastodon', 'truthsocial'] as const
 
 function getPlatformStatus(platform: string): 'connected' | 'not_configured' | 'disconnected' {
   switch (platform) {
@@ -16,7 +16,14 @@ function getPlatformStatus(platform: string): 'connected' | 'not_configured' | '
     case 'linkedin':
       return process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_PERSON_URN ? 'connected' : 'not_configured'
     case 'website':
-      return 'connected' // website is always available
+      return 'connected'
+    // Browser-session platforms — status comes from DB only
+    case 'tiktok':
+    case 'youtube':
+    case 'reddit':
+    case 'mastodon':
+    case 'truthsocial':
+      return 'disconnected'
     default:
       return 'not_configured'
   }
