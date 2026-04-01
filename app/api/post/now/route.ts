@@ -161,8 +161,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: msg, results }, { status: 500 })
   }
 }
-
-// GET — platform readiness check
 export async function GET() {
   const [xRate, liRate] = await Promise.all([
     hawk.checkRateLimit('x').catch(() => ({ allowed: false, remaining: 0, resetAt: new Date() })),
