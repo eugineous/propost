@@ -17,9 +17,12 @@ export class LinkedInAdapter implements PlatformAdapter {
   }
 
   private get personUrn(): string {
-    const v = process.env.LINKEDIN_PERSON_URN
+    // Support both LINKEDIN_PERSON_URN and LINKEDIN_AUTHOR_URN (legacy)
+    const v = process.env.LINKEDIN_PERSON_URN ?? process.env.LINKEDIN_AUTHOR_URN
     if (!v) throw new Error('LINKEDIN_PERSON_URN not set')
-    return v
+    // Return the full URN — normalize to urn:li:person: format
+    const stripped = v.replace(/^urn:li:(member|person):/, '').trim()
+    return `urn:li:person:${stripped}`
   }
 
   private authHeaders(): Record<string, string> {
@@ -50,7 +53,7 @@ export class LinkedInAdapter implements PlatformAdapter {
   async post(content: PostContent): Promise<PlatformPostResult> {
     const url = `${LI_BASE}/ugcPosts`
     const body = {
-      author: `urn:li:person:${this.personUrn}`,
+      author: this.personUrn,
       lifecycleState: 'PUBLISHED',
       specificContent: {
         'com.linkedin.ugc.ShareContent': {
@@ -95,7 +98,7 @@ export class LinkedInAdapter implements PlatformAdapter {
   async reply(targetId: string, content: string): Promise<PlatformPostResult> {
     const url = `${LI_BASE}/socialActions/${targetId}/comments`
     const body = {
-      actor: `urn:li:person:${this.personUrn}`,
+      actor: this.personUrn,
       message: { text: content },
     }
 

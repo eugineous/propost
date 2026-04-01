@@ -8,11 +8,11 @@
   "crons": [
     {
       "path": "/api/cron/ai-news",
-      "schedule": "0 3,6,9,12 * * *"
+      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/cron/daily-workflows",
-      "schedule": "0 17 * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }

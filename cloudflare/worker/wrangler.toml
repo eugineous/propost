@@ -1,0 +1,12 @@
+name = "propost-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Set these in Cloudflare dashboard → Workers → propost-worker → Settings → Variables:
+# PROPOST_URL     = https://propost.vercel.app
+# CRON_SECRET     = propost-cron-371667210-secret
+# INTERNAL_SECRET = propost-internal-649185875-secret
