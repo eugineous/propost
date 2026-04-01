@@ -74,7 +74,7 @@ function PostNowPanel() {
     fetch('/api/post/now').then(r => r.json()).then(setStatus).catch(() => {})
   }, [])
 
-  const firePost = async (platform: 'x' | 'linkedin' | 'both') => {
+  const firePost = async (platform: 'x' | 'linkedin' | 'instagram' | 'facebook' | 'all') => {
     setPosting(platform)
     setLastResult(null)
     try {
@@ -87,7 +87,7 @@ function PostNowPanel() {
       const results = (data.results as Array<{ platform: string; success: boolean; postId?: string; error?: string; url?: string }>) ?? []
       const msgs = results.map((r) =>
         r.success
-          ? `✅ ${r.platform.toUpperCase()} posted — ${r.url ?? r.postId ?? 'ok'}`
+          ? `✅ ${r.platform.toUpperCase()} — ${r.url ?? r.postId ?? 'posted'}`
           : `❌ ${r.platform.toUpperCase()} — ${r.error ?? 'failed'}`
       )
       setLastResult(msgs.join('\n') || (data.error as string) || 'Done')
@@ -98,47 +98,32 @@ function PostNowPanel() {
     }
   }
 
-  const xStatus = status ? (status.x as Record<string, unknown>) : null
-  const liStatus = status ? (status.linkedin as Record<string, unknown>) : null
-
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-      <div className="text-xs text-blue-400 mb-3 font-bold tracking-wider flex items-center gap-2">
-        POST NOW
-        {status && (
-          <span className="text-gray-600 font-normal normal-case">
-            {xStatus?.configured ? '· X ready' : '· X: needs API upgrade'}
-            {liStatus?.configured ? ' · LinkedIn ready' : ' · LinkedIn: needs token'}
-          </span>
-        )}
-      </div>
+      <div className="text-xs text-blue-400 mb-3 font-bold tracking-wider">⚡ POST NOW</div>
       <div className="flex gap-2 flex-wrap">
-        <button
-          onClick={() => firePost('x')}
-          disabled={!!posting}
-          className="px-3 py-2 bg-sky-700 hover:bg-sky-600 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
-        >
-          {posting === 'x' ? '⏳' : '🐦'} Post to X
+        <button onClick={() => firePost('all')} disabled={!!posting}
+          className="px-4 py-2 bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 rounded text-xs font-bold transition-colors">
+          {posting === 'all' ? '⏳ Posting...' : '🚀 All Platforms'}
         </button>
-        <button
-          onClick={() => firePost('linkedin')}
-          disabled={!!posting}
-          className="px-3 py-2 bg-blue-800 hover:bg-blue-700 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
-        >
-          {posting === 'linkedin' ? '⏳' : '💼'} Post to LinkedIn
+        <button onClick={() => firePost('x')} disabled={!!posting}
+          className="px-3 py-2 bg-sky-800 hover:bg-sky-700 disabled:bg-gray-700 rounded text-xs font-bold transition-colors">
+          {posting === 'x' ? '⏳' : '𝕏'} X
         </button>
-        <button
-          onClick={() => firePost('both')}
-          disabled={!!posting}
-          className="px-3 py-2 bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
-        >
-          {posting === 'both' ? '⏳ Posting...' : '⚡ Post to Both'}
+        <button onClick={() => firePost('linkedin')} disabled={!!posting}
+          className="px-3 py-2 bg-blue-900 hover:bg-blue-800 disabled:bg-gray-700 rounded text-xs font-bold transition-colors">
+          {posting === 'linkedin' ? '⏳' : '💼'} LinkedIn
         </button>
-        <a
-          href="/inbox"
-          className="px-3 py-2 bg-yellow-800 hover:bg-yellow-700 rounded text-xs font-bold transition-colors flex items-center gap-1"
-        >
-          📋 Approval Queue
+        <button onClick={() => firePost('instagram')} disabled={!!posting}
+          className="px-3 py-2 bg-pink-900 hover:bg-pink-800 disabled:bg-gray-700 rounded text-xs font-bold transition-colors">
+          {posting === 'instagram' ? '⏳' : '📸'} Instagram
+        </button>
+        <button onClick={() => firePost('facebook')} disabled={!!posting}
+          className="px-3 py-2 bg-blue-950 hover:bg-blue-900 disabled:bg-gray-700 rounded text-xs font-bold transition-colors">
+          {posting === 'facebook' ? '⏳' : '📘'} Facebook
+        </button>
+        <a href="/inbox" className="px-3 py-2 bg-yellow-800 hover:bg-yellow-700 rounded text-xs font-bold transition-colors">
+          📋 Queue
         </a>
       </div>
       {lastResult && (

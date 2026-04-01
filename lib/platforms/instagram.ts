@@ -96,6 +96,12 @@ export class InstagramAdapter implements PlatformAdapter {
     const params: Record<string, string> = { caption: content.text }
     if (content.mediaUrls?.[0]) {
       params.image_url = content.mediaUrls[0]
+    } else if (process.env.DEFAULT_IG_IMAGE_URL) {
+      // Use default brand image when no media provided
+      params.image_url = process.env.DEFAULT_IG_IMAGE_URL
+    } else {
+      // No image available — queue for manual posting
+      throw new Error('Instagram requires an image URL. Set DEFAULT_IG_IMAGE_URL env var or provide mediaUrls.')
     }
 
     const mediaId = await this.createMediaContainer(params)

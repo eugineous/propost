@@ -13,7 +13,7 @@ export class FacebookAdapter implements PlatformAdapter {
   readonly platform: Platform = 'facebook'
 
   private get accessToken(): string {
-    const v = process.env.FACEBOOK_PAGE_ACCESS_TOKEN
+    const v = process.env.FACEBOOK_PAGE_ACCESS_TOKEN ?? process.env.FACEBOOK_ACCESS_TOKEN
     if (!v) throw new Error('FACEBOOK_PAGE_ACCESS_TOKEN not set')
     return v
   }

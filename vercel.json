@@ -4,5 +4,15 @@
     "app/api/workflows/**": { "maxDuration": 300 },
     "app/api/cron/**": { "maxDuration": 300 },
     "app/api/agents/work": { "maxDuration": 300 }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/ai-news",
+      "schedule": "0 3,6,9,12 * * *"
+    },
+    {
+      "path": "/api/cron/daily-workflows",
+      "schedule": "0 17 * * *"
+    }
+  ]
 }

@@ -24,7 +24,7 @@ import { getDb, withRetry } from '@/lib/db/client'
 import { postViaMake, isMakeConfigured } from '@/lib/make/client'
 
 interface PostNowBody {
-  platform?: 'x' | 'linkedin' | 'both'
+  platform?: 'x' | 'linkedin' | 'instagram' | 'facebook' | 'all'
   topic?: string
   pillar?: string
   content?: string // pre-written content (skip AI generation)
@@ -84,6 +84,67 @@ async function queueForApproval(platform: string, content: string, reason: strin
       `
     )
   } catch { /* non-fatal */ }
+}
+
+async function postToInstagramNow(content: string): Promise<PostResult> {
+  // Try Make.com first (handles media upload automatically)
+  if (isMakeConfigured('instagram')) {
+    logInfo('[post/now] Using Make.com for Instagram post')
+    const makeResult = await postViaMake({ platform: 'instagram', content, agentName: 'AURORA' })
+    if (makeResult.ok) {
+      propostEvents.emit('activity', {
+        id: crypto.randomUUID(), type: 'post', agentName: 'AURORA',
+        company: 'gramgod', platform: 'instagram',
+        contentPreview: content.slice(0, 80), timestamp: new Date().toISOString(),
+      })
+      return { platform: 'instagram', success: true, content }
+    }
+    logInfo(`[post/now] Make failed for Instagram: ${makeResult.error} — trying direct API`)
+  }
+
+  // Direct Instagram Graph API
+  try {
+    const igAdapter = getPlatformAdapter('instagram')
+    const result = await igAdapter.post({ text: content })
+    await logAction({ agentName: 'AURORA', company: 'gramgod', platform: 'instagram', actionType: 'post_now', content, status: 'success', platformPostId: result.postId })
+    propostEvents.emit('activity', { id: result.postId ?? crypto.randomUUID(), type: 'post', agentName: 'AURORA', company: 'gramgod', platform: 'instagram', contentPreview: content.slice(0, 80), timestamp: new Date().toISOString() })
+    return { platform: 'instagram', success: true, postId: result.postId, content }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Queue for approval if direct API fails
+    await queueForApproval('instagram', content, msg)
+    return { platform: 'instagram', success: false, error: `${msg} — queued for approval`, content }
+  }
+}
+
+async function postToFacebookNow(content: string): Promise<PostResult> {
+  // Try Make.com first
+  if (isMakeConfigured('facebook')) {
+    logInfo('[post/now] Using Make.com for Facebook post')
+    const makeResult = await postViaMake({ platform: 'facebook', content, agentName: 'CHIEF' })
+    if (makeResult.ok) {
+      propostEvents.emit('activity', {
+        id: crypto.randomUUID(), type: 'post', agentName: 'CHIEF',
+        company: 'pagepower', platform: 'facebook',
+        contentPreview: content.slice(0, 80), timestamp: new Date().toISOString(),
+      })
+      return { platform: 'facebook', success: true, content }
+    }
+    logInfo(`[post/now] Make failed for Facebook: ${makeResult.error} — trying direct API`)
+  }
+
+  // Direct Facebook Graph API
+  try {
+    const fbAdapter = getPlatformAdapter('facebook')
+    const result = await fbAdapter.post({ text: content })
+    await logAction({ agentName: 'CHIEF', company: 'pagepower', platform: 'facebook', actionType: 'post_now', content, status: 'success', platformPostId: result.postId })
+    propostEvents.emit('activity', { id: result.postId ?? crypto.randomUUID(), type: 'post', agentName: 'CHIEF', company: 'pagepower', platform: 'facebook', contentPreview: content.slice(0, 80), timestamp: new Date().toISOString() })
+    return { platform: 'facebook', success: true, postId: result.postId, content }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await queueForApproval('facebook', content, msg)
+    return { platform: 'facebook', success: false, error: `${msg} — queued for approval`, content }
+  }
 }
 
 async function postToXNow(content: string): Promise<PostResult> {
@@ -270,60 +331,61 @@ export async function POST(req: NextRequest) {
     body = {}
   }
 
-  const platform = body.platform ?? 'both'
+  const platform = body.platform ?? 'all'
   const pillar = body.pillar ?? 'ai_news'
   const results: PostResult[] = []
 
   try {
-    // Get or generate content
-    let xContent = body.content ?? ''
-    let liContent = body.content ?? ''
+    const topic = await getBestTopic()
+    const topicText = body.topic ?? topic.headline
+    const summary = topic.summary
 
-    if (!xContent || !liContent) {
-      // Fetch best topic
-      const topic = await getBestTopic()
-      const topicText = body.topic ?? topic.headline
-      const summary = topic.summary
+    // Generate content for each platform in parallel
+    const [xContent, liContent, igContent, fbContent] = await Promise.all([
+      // X
+      (platform === 'x' || platform === 'both' || platform === 'all') && !body.content
+        ? aiRouter.route('generate',
+            `Write a sharp X post about: ${topicText}. Under 280 chars. Kenyan angle. Hot take.\n\nSummary: ${summary}\n\nVoice: Eugine Micah. No AI filler. MANDATORY: Kenyan angle.`,
+            { platform: 'x', systemPrompt: PLATFORM_PROMPTS.x, pillar }
+          ).then(r => formatContent(r.content, 'x', 'ai_news').content).catch(() => '')
+        : Promise.resolve(body.content ?? ''),
 
-      if (!xContent && (platform === 'x' || platform === 'both')) {
-        const formats = [
-          `Write a sharp X post about: ${topicText}. Under 280 chars. Kenyan angle. Hot take.`,
-          `Write an X thread hook about: ${topicText}. First tweet only, under 240 chars.`,
-          `Write a reactive X post: "${topicText}". Under 200 chars. "Nobody in Nairobi is talking about this..."`,
-        ]
-        const prompt = formats[new Date().getUTCMinutes() % formats.length]
-        const generated = await aiRouter.route(
-          'generate',
-          `${prompt}\n\nSummary: ${summary}\n\nVoice: Eugine Micah — sharp, culturally grounded. No AI filler. Em dashes (—) not hyphens. MANDATORY: Kenyan/African angle.`,
-          { platform: 'x', systemPrompt: PLATFORM_PROMPTS.x, pillar }
-        )
-        xContent = formatContent(generated.content, 'x', 'ai_news').content
-      }
+      // LinkedIn
+      (platform === 'linkedin' || platform === 'both' || platform === 'all') && !body.content
+        ? aiRouter.route('generate',
+            `Write a LinkedIn post about: ${topicText}. Hook + 3-4 paragraphs + Kenyan angle + CTA. 800-1200 chars.\n\nSummary: ${summary}\n\nVoice: Eugine Micah — professional authority. 3-5 hashtags at end.`,
+            { platform: 'linkedin', systemPrompt: PLATFORM_PROMPTS.linkedin, pillar }
+          ).then(r => formatContent(r.content, 'linkedin', 'ai_news').content).catch(() => '')
+        : Promise.resolve(body.content ?? ''),
 
-      if (!liContent && (platform === 'linkedin' || platform === 'both')) {
-        const liFormats = [
-          `Write a LinkedIn post about: ${topicText}. Hook + 3-4 paragraphs + Kenyan angle + CTA. 800-1200 chars.`,
-          `Write a LinkedIn thought leadership post: "${topicText}". Bold claim. Build argument. End with question.`,
-        ]
-        const liPrompt = liFormats[new Date().getUTCMinutes() % liFormats.length]
-        const generated = await aiRouter.route(
-          'generate',
-          `${liPrompt}\n\nSummary: ${summary}\n\nVoice: Eugine Micah — professional authority. No AI filler. Em dashes (—). 3-5 hashtags at end.`,
-          { platform: 'linkedin', systemPrompt: PLATFORM_PROMPTS.linkedin, pillar }
-        )
-        liContent = formatContent(generated.content, 'linkedin', 'ai_news').content
-      }
-    }
+      // Instagram
+      (platform === 'instagram' || platform === 'all') && !body.content
+        ? aiRouter.route('generate',
+            `Write an Instagram caption about: ${topicText}. Engaging, story-driven. Mix English and Swahili naturally. Max 2 hashtags. End with a question.\n\nSummary: ${summary}`,
+            { platform: 'instagram', pillar }
+          ).then(r => r.content).catch(() => '')
+        : Promise.resolve(body.content ?? ''),
 
-    // Fire posts
-    if (platform === 'x' || platform === 'both') {
-      const result = await postToXNow(xContent)
-      results.push(result)
-    }
+      // Facebook
+      (platform === 'facebook' || platform === 'all') && !body.content
+        ? aiRouter.route('generate',
+            `Write a Facebook post about: ${topicText}. Community-focused, shareable. Kenyan audience. Ask a question to drive comments.\n\nSummary: ${summary}`,
+            { platform: 'facebook', pillar }
+          ).then(r => r.content).catch(() => '')
+        : Promise.resolve(body.content ?? ''),
+    ])
 
-    if (platform === 'linkedin' || platform === 'both') {
-      const result = await postToLinkedInNow(liContent)
-      results.push(result)
+    // Fire all platforms in parallel
+    const postPromises: Promise<PostResult>[] = []
+    if ((platform === 'x' || platform === 'both' || platform === 'all') && xContent) postPromises.push(postToXNow(xContent))
+    if ((platform === 'linkedin' || platform === 'both' || platform === 'all') && liContent) postPromises.push(postToLinkedInNow(liContent))
+    if ((platform === 'instagram' || platform === 'all') && igContent) postPromises.push(postToInstagramNow(igContent))
+    if ((platform === 'facebook' || platform === 'all') && fbContent) postPromises.push(postToFacebookNow(fbContent))
+
+    const settled = await Promise.allSettled(postPromises)
+    for (const r of settled) {
+      if (r.status === 'fulfilled') results.push(r.value)
+      else results.push({ platform: 'unknown', success: false, error: String(r.reason) })
     }
 
     // Update platform connection status in DB
