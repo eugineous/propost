@@ -3,6 +3,12 @@
 // No queue. No waiting. Fires right now.
 // Used for: manual triggers, "post now" button, immediate trend reactions.
 //
+// Posting priority:
+//   1. Make.com webhook (if configured) — handles all platforms cleanly
+//   2. Direct platform API (X OAuth, LinkedIn API)
+//   3. X browser poster fallback (if API credits depleted)
+//   4. Approval queue (if all else fails)
+//
 // Body: { platform: 'x' | 'linkedin' | 'both', topic?: string, pillar?: string }
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -15,6 +21,7 @@ import { getBestTopic } from '@/lib/content/ai-news-source'
 import { formatContent } from '@/lib/content/formatter'
 import { propostEvents } from '@/lib/events'
 import { getDb, withRetry } from '@/lib/db/client'
+import { postViaMake, isMakeConfigured } from '@/lib/make/client'
 
 interface PostNowBody {
   platform?: 'x' | 'linkedin' | 'both'
@@ -80,6 +87,21 @@ async function queueForApproval(platform: string, content: string, reason: strin
 }
 
 async function postToXNow(content: string): Promise<PostResult> {
+  // Try Make.com first if configured
+  if (isMakeConfigured('x')) {
+    logInfo('[post/now] Using Make.com for X post')
+    const makeResult = await postViaMake({ platform: 'x', content, agentName: 'BLAZE' })
+    if (makeResult.ok) {
+      propostEvents.emit('activity', {
+        id: crypto.randomUUID(), type: 'post', agentName: 'BLAZE',
+        company: 'xforce', platform: 'x',
+        contentPreview: content.slice(0, 80), timestamp: new Date().toISOString(),
+      })
+      return { platform: 'x', success: true, content }
+    }
+    logInfo(`[post/now] Make failed for X: ${makeResult.error} — trying direct API`)
+  }
+
   try {
     const rateStatus = await hawk.checkRateLimit('x')
     if (!rateStatus.allowed) {
@@ -160,6 +182,21 @@ async function postToXNow(content: string): Promise<PostResult> {
 }
 
 async function postToLinkedInNow(content: string): Promise<PostResult> {
+  // Try Make.com first if configured
+  if (isMakeConfigured('linkedin')) {
+    logInfo('[post/now] Using Make.com for LinkedIn post')
+    const makeResult = await postViaMake({ platform: 'linkedin', content, agentName: 'ORATOR' })
+    if (makeResult.ok) {
+      propostEvents.emit('activity', {
+        id: crypto.randomUUID(), type: 'post', agentName: 'ORATOR',
+        company: 'linkedelite', platform: 'linkedin',
+        contentPreview: content.slice(0, 80), timestamp: new Date().toISOString(),
+      })
+      return { platform: 'linkedin', success: true, content }
+    }
+    logInfo(`[post/now] Make failed for LinkedIn: ${makeResult.error} — trying direct API`)
+  }
+
   try {
     const rateStatus = await hawk.checkRateLimit('linkedin')
     if (!rateStatus.allowed) {
