@@ -7,9 +7,7 @@ import { aiRouter } from '@/lib/ai/router'
 import { hawk } from '@/lib/hawk/engine'
 import { getPlatformAdapter } from '@/lib/platforms/index'
 import { logAction, logInfo, logError } from '@/lib/logger'
-import { PLATFORM_PROMPTS } from '@/lib/brand/context'
 import { getBestTopic } from '@/lib/content/ai-news-source'
-import { formatContent } from '@/lib/content/formatter'
 import { propostEvents } from '@/lib/events'
 
 interface PostNowBody {
@@ -123,19 +121,19 @@ export async function POST(req: NextRequest) {
     // Generate content for each platform in parallel (skip if pre-written)
     const [xContent, liContent, igContent, fbContent] = await Promise.all([
       needsX && !body.content
-        ? aiRouter.route('generate', `Write a sharp X post about: ${topicText}. Under 280 chars. Kenyan angle. Hot take.\n\nSummary: ${summary}\n\nVoice: Eugine Micah. No AI filler.`, { platform: 'x', systemPrompt: PLATFORM_PROMPTS.x, pillar }).then(r => formatContent(r.content, 'x', 'ai_news').content).catch(() => '')
+        ? aiRouter.route('generate', `Write a sharp X post about: ${topicText}. Under 280 chars. Kenyan angle.`, { platform: 'x', pillar }).then(r => r.content.slice(0, 280)).catch(() => topicText.slice(0, 240))
         : Promise.resolve(body.content ?? ''),
 
       needsLI && !body.content
-        ? aiRouter.route('generate', `Write a LinkedIn post about: ${topicText}. Hook + 3 paragraphs + Kenyan angle + CTA.\n\nSummary: ${summary}\n\nVoice: Eugine Micah — professional authority. 3-5 hashtags at end.`, { platform: 'linkedin', systemPrompt: PLATFORM_PROMPTS.linkedin, pillar }).then(r => formatContent(r.content, 'linkedin', 'ai_news').content).catch(() => '')
+        ? aiRouter.route('generate', `Write a LinkedIn post about: ${topicText}. Professional, Kenyan angle, 3 hashtags at end.`, { platform: 'linkedin', pillar }).then(r => r.content).catch(() => topicText)
         : Promise.resolve(body.content ?? ''),
 
       needsIG && !body.content
-        ? aiRouter.route('generate', `Write an Instagram caption about: ${topicText}. Engaging, story-driven. Mix English and Swahili. Max 2 hashtags. End with a question.\n\nSummary: ${summary}`, { platform: 'instagram', pillar }).then(r => r.content).catch(() => '')
+        ? aiRouter.route('generate', `Write an Instagram caption about: ${topicText}. Engaging, 2 hashtags, end with a question.`, { platform: 'instagram', pillar }).then(r => r.content).catch(() => topicText)
         : Promise.resolve(body.content ?? ''),
 
       needsFB && !body.content
-        ? aiRouter.route('generate', `Write a Facebook post about: ${topicText}. Community-focused, shareable. Kenyan audience. Ask a question.\n\nSummary: ${summary}`, { platform: 'facebook', pillar }).then(r => r.content).catch(() => '')
+        ? aiRouter.route('generate', `Write a Facebook post about: ${topicText}. Community-focused, ask a question.`, { platform: 'facebook', pillar }).then(r => r.content).catch(() => topicText)
         : Promise.resolve(body.content ?? ''),
     ])
 
