@@ -1,428 +1,316 @@
 'use client'
 
-// Platform Connect Page — Full Multi-Platform Login Hub
-// Each platform opens an ISOLATED browser window (no personal Chrome data)
-// Session is captured and stored in Cloudflare KV after login
+// Platform Connect Page — Make.com Integration
+//
+// ARCHITECTURE:
+// ProPost generates content → sends to Make.com webhook → Make posts to platform
+// Make.com handles all OAuth/login for every platform in its own dashboard.
+// You connect accounts ONCE in Make.com — no browser sessions, no cookies.
+//
+// SETUP PER PLATFORM:
+// 1. Go to make.com → Create scenario
+// 2. Add "Webhooks > Custom Webhook" as trigger
+// 3. Add platform module (Instagram, Facebook, etc.) as action
+// 4. Copy webhook URL → add to Vercel env vars
+// 5. Done — ProPost sends content, Make posts it
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 
-interface PlatformStatus {
-  platform: string
-  status: string
-  hasSession?: boolean
-  lastVerified?: string
-  error?: string
-  error_message?: string
+interface MakePlatformStatus {
+  configured: boolean
+  envVar: string
 }
 
-interface ConnectResult {
+interface MakeStatus {
   ok: boolean
-  message?: string
-  error?: string
+  apiKey: boolean
+  platforms: Record<string, MakePlatformStatus>
+  summary: string
 }
-
-type LoginStep = 'idle' | 'waiting' | 'capturing' | 'done' | 'error'
-
-// ─── Platform definitions ─────────────────────────────────────────────────────
 
 const PLATFORMS = [
-  // ── Browser-based (popup login) ──
-  {
-    id: 'x',
-    name: 'X (Twitter)',
-    icon: '𝕏',
-    color: '#1d9bf0',
-    group: 'Social',
-    description: 'Posts, replies, threads — 2x/hour autonomous',
-    loginUrl: 'https://x.com/login',
-    method: 'browser' as const,
-    capabilities: ['Post 2x/hour', 'Reply 20/day', 'Thread publishing'],
-  },
-  {
-    id: 'instagram',
-    name: 'Instagram',
-    icon: '📸',
-    color: '#e1306c',
-    group: 'Social',
-    description: 'Posts, stories, reels, DMs',
-    loginUrl: 'https://www.instagram.com/accounts/login/',
-    method: 'browser' as const,
-    capabilities: ['Posts & carousels', 'Stories', 'DM replies 20/day'],
-  },
-  {
-    id: 'facebook',
-    name: 'Facebook',
-    icon: '📘',
-    color: '#1877f2',
-    group: 'Social',
-    description: 'Page posts, comments, community',
-    loginUrl: 'https://www.facebook.com/login',
-    method: 'browser' as const,
-    capabilities: ['Page posts', 'Comment replies', 'Community management'],
-  },
-  {
-    id: 'linkedin',
-    name: 'LinkedIn',
-    icon: '💼',
-    color: '#0a66c2',
-    group: 'Social',
-    description: 'Professional posts, articles, networking',
-    loginUrl: 'https://www.linkedin.com/login',
-    method: 'browser' as const,
-    capabilities: ['Posts 2x/hour', 'Article publishing', 'Comment replies'],
-  },
-  {
-    id: 'tiktok',
-    name: 'TikTok',
-    icon: '🎵',
-    color: '#ff0050',
-    group: 'Video',
-    description: 'Short video scripts, captions, comments',
-    loginUrl: 'https://www.tiktok.com/login',
-    method: 'browser' as const,
-    capabilities: ['Video scripts', 'Caption generation', 'Comment replies'],
-  },
-  {
-    id: 'youtube',
-    name: 'YouTube',
-    icon: '▶️',
-    color: '#ff0000',
-    group: 'Video',
-    description: 'Video descriptions, community posts, comments',
-    loginUrl: 'https://accounts.google.com/signin',
-    method: 'browser' as const,
-    capabilities: ['Community posts', 'Video descriptions', 'Comment replies'],
-  },
-  {
-    id: 'reddit',
-    name: 'Reddit',
-    icon: '🤖',
-    color: '#ff4500',
-    group: 'Community',
-    description: 'AI subreddit posts, comments, discussions',
-    loginUrl: 'https://www.reddit.com/login',
-    method: 'browser' as const,
-    capabilities: ['Subreddit posts', 'Comment replies', 'Discussion threads'],
-  },
-  {
-    id: 'mastodon',
-    name: 'Mastodon',
-    icon: '🐘',
-    color: '#6364ff',
-    group: 'Community',
-    description: 'Decentralized social — AI community posts',
-    loginUrl: 'https://mastodon.social/auth/sign_in',
-    method: 'browser' as const,
-    capabilities: ['Toots & threads', 'Community engagement'],
-  },
-  {
-    id: 'truthsocial',
-    name: 'Truth Social',
-    icon: '🇺🇸',
-    color: '#5448ee',
-    group: 'Community',
-    description: 'Posts and engagement',
-    loginUrl: 'https://truthsocial.com/login',
-    method: 'browser' as const,
-    capabilities: ['Posts', 'Replies'],
-  },
+  { id: 'x',           name: 'X (Twitter)', icon: '𝕏',  color: '#1d9bf0', group: 'Social',    makeModule: 'X (Twitter)',  caps: ['2 posts/hour', '20 replies/day'] },
+  { id: 'instagram',   name: 'Instagram',   icon: '📸', color: '#e1306c', group: 'Social',    makeModule: 'Instagram',    caps: ['Daily posts', 'Stories', '20 DMs/day'] },
+  { id: 'facebook',    name: 'Facebook',    icon: '📘', color: '#1877f2', group: 'Social',    makeModule: 'Facebook',     caps: ['Page posts', 'Comment replies'] },
+  { id: 'linkedin',    name: 'LinkedIn',    icon: '💼', color: '#0a66c2', group: 'Social',    makeModule: 'LinkedIn',     caps: ['2 posts/hour', 'Articles'] },
+  { id: 'tiktok',      name: 'TikTok',      icon: '🎵', color: '#ff0050', group: 'Video',     makeModule: 'TikTok',       caps: ['Video scripts', 'Captions'] },
+  { id: 'youtube',     name: 'YouTube',     icon: '▶️', color: '#ff0000', group: 'Video',     makeModule: 'YouTube',      caps: ['Community posts', 'Descriptions'] },
+  { id: 'reddit',      name: 'Reddit',      icon: '🤖', color: '#ff4500', group: 'Community', makeModule: 'Reddit',       caps: ['3-5 posts/day', '20 comments/day'] },
+  { id: 'mastodon',    name: 'Mastodon',    icon: '🐘', color: '#6364ff', group: 'Community', makeModule: 'HTTP (custom)',caps: ['Posts every 2-3 hours'] },
+  { id: 'truthsocial', name: 'Truth Social', icon: '🇺🇸', color: '#5448ee', group: 'Community', makeModule: 'HTTP (custom)',caps: ['Posts', 'Replies'] },
 ]
 
-// ─── Isolated browser window opener ──────────────────────────────────────────
-// Opens a popup window navigating DIRECTLY to the login URL.
-// We use a unique window name each time so Chrome treats it as a fresh window.
-// The popup has no opener reference (noopener) so it can't access parent state.
-
-function openIsolatedBrowser(loginUrl: string, platformId: string): Window | null {
-  const features = [
-    'width=520',
-    'height=720',
-    'scrollbars=yes',
-    'resizable=yes',
-    'toolbar=yes',
-    'menubar=no',
-    'location=yes',
-    'status=no',
-  ].join(',')
-
-  // Navigate directly to the login URL — no intermediate page
-  // Unique name ensures a brand new window every time (not reusing an old tab)
-  const popup = window.open(
-    loginUrl,
-    `propost_${platformId}_${Date.now()}`,
-    features
-  )
-
-  return popup ?? null
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+const GROUPS = ['Social', 'Video', 'Community']
 
 export default function ConnectPage() {
-  const [statuses, setStatuses] = useState<Record<string, PlatformStatus>>({})
-  const [loginSteps, setLoginSteps] = useState<Record<string, LoginStep>>({})
-  const [loginWindows, setLoginWindows] = useState<Record<string, Window | null>>({})
-  const [results, setResults] = useState<Record<string, ConnectResult>>({})
-  const [capturing, setCapturing] = useState<string | null>(null)
+  const [makeStatus, setMakeStatus] = useState<MakeStatus | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, string>>({})
+  const [testing, setTesting] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
 
-  const loadStatuses = useCallback(async () => {
+  const loadStatus = useCallback(async () => {
     try {
-      const [connRes, sessionRes] = await Promise.all([
-        fetch('/api/connections').then(r => r.json()).catch(() => []),
-        fetch('/api/connect/sessions').then(r => r.json()).catch(() => ({})),
-      ])
-
-      const map: Record<string, PlatformStatus> = {}
-
-      if (Array.isArray(connRes)) {
-        for (const c of connRes) {
-          map[c.platform] = {
-            platform: c.platform,
-            status: c.status,
-            lastVerified: c.last_verified,
-            error: c.error_message,
-          }
-        }
-      }
-
-      // Merge browser session statuses
-      if (sessionRes && typeof sessionRes === 'object') {
-        for (const [platform, info] of Object.entries(sessionRes as Record<string, { hasSession: boolean }>)) {
-          map[platform] = {
-            ...map[platform],
-            platform,
-            status: info.hasSession ? 'connected' : (map[platform]?.status ?? 'not_connected'),
-            hasSession: info.hasSession,
-          }
-        }
-      }
-
-      setStatuses(map)
+      const res = await fetch('/api/make/status')
+      const data = await res.json()
+      setMakeStatus(data)
     } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
-    loadStatuses()
-    const interval = setInterval(loadStatuses, 15000)
-    return () => clearInterval(interval)
-  }, [loadStatuses])
+    loadStatus()
+    const t = setInterval(loadStatus, 10000)
+    return () => clearInterval(t)
+  }, [loadStatus])
 
-  const startLogin = useCallback((platformId: string, loginUrl: string) => {
-    const popup = openIsolatedBrowser(loginUrl, platformId)
-
-    if (!popup) {
-      setResults(prev => ({ ...prev, [platformId]: { ok: false, error: 'Popup blocked — click the address bar icon in Chrome and allow popups for propost.vercel.app, then try again.' } }))
-      return
-    }
-
-    setLoginWindows(prev => ({ ...prev, [platformId]: popup }))
-    setLoginSteps(prev => ({ ...prev, [platformId]: 'waiting' }))
-    setResults(prev => ({ ...prev, [platformId]: { ok: false, message: `🔐 Log into ${platformId} in the isolated window. Come back when done.` } }))
-  }, [])
-
-  const captureSession = useCallback(async (platformId: string) => {
-    setCapturing(platformId)
-    setLoginSteps(prev => ({ ...prev, [platformId]: 'capturing' }))
-    setResults(prev => ({ ...prev, [platformId]: { ok: false, message: '⏳ Saving session...' } }))
-
-    // Close the popup
-    const popup = loginWindows[platformId]
-    if (popup && !popup.closed) popup.close()
-
+  const testWebhook = useCallback(async (platformId: string) => {
+    setTesting(platformId)
+    setTestResults(prev => ({ ...prev, [platformId]: '⏳ Testing...' }))
     try {
-      const res = await fetch('/api/connect/sessions', {
+      const res = await fetch('/api/make/post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform: platformId, action: 'login' }),
+        body: JSON.stringify({
+          platform: platformId,
+          content: `🧪 ProPost test post from ${platformId.toUpperCase()} — ${new Date().toLocaleTimeString()}. If you see this, the Make.com integration is working!`,
+          pillar: 'ai_news',
+          agentName: 'TEST',
+        }),
       })
-      const data = await res.json() as ConnectResult
-
-      setResults(prev => ({ ...prev, [platformId]: data }))
-      setLoginSteps(prev => ({ ...prev, [platformId]: data.ok ? 'done' : 'error' }))
-
-      if (data.ok) await loadStatuses()
+      const data = await res.json() as { ok: boolean; results?: Array<{ ok: boolean; error?: string }> }
+      const result = data.results?.[0]
+      if (result?.ok) {
+        setTestResults(prev => ({ ...prev, [platformId]: '✅ Test post sent via Make.com!' }))
+      } else {
+        setTestResults(prev => ({ ...prev, [platformId]: `❌ ${result?.error ?? 'Failed'}` }))
+      }
     } catch (err) {
-      setResults(prev => ({ ...prev, [platformId]: { ok: false, error: String(err) } }))
-      setLoginSteps(prev => ({ ...prev, [platformId]: 'error' }))
+      setTestResults(prev => ({ ...prev, [platformId]: `❌ ${String(err)}` }))
     } finally {
-      setCapturing(null)
+      setTesting(null)
     }
-  }, [loginWindows, loadStatuses])
-
-  const resetLogin = useCallback((platformId: string) => {
-    setLoginSteps(prev => ({ ...prev, [platformId]: 'idle' }))
-    setResults(prev => { const n = { ...prev }; delete n[platformId]; return n })
   }, [])
 
-  const getStatusBadge = (platformId: string) => {
-    const s = statuses[platformId]
-    if (!s) return <span className="text-xs text-gray-600 bg-gray-800/50 px-2 py-0.5 rounded">—</span>
-    if (s.status === 'connected' || s.hasSession)
-      return <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded font-bold">✓ Connected</span>
-    if (s.status === 'error')
-      return <span className="text-xs text-red-400 bg-red-900/30 px-2 py-0.5 rounded font-bold">✗ Error</span>
-    if (s.status === 'expired')
-      return <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded font-bold">⚠ Expired</span>
-    return <span className="text-xs text-gray-500 bg-gray-800/50 px-2 py-0.5 rounded">Not connected</span>
-  }
-
-  const groups = ['Social', 'Video', 'Community']
+  const selectedPlatform = PLATFORMS.find(p => p.id === selected)
+  const selectedStatus = makeStatus?.platforms[selected ?? '']
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      {/* Nav */}
       <div className="border-b border-gray-800 px-6 py-3 flex items-center gap-4">
         <Link href="/" className="text-gray-500 hover:text-gray-300 text-sm">← Empire</Link>
         <span className="text-white font-bold">Connect Platforms</span>
-        <span className="text-xs text-gray-600">Log in once — agents work forever</span>
+        <span className="text-xs text-gray-600">via Make.com — connect once, post everywhere</span>
       </div>
 
-      {/* Info banner */}
-      <div className="mx-6 mt-4 p-3 bg-blue-900/20 border border-blue-800/40 rounded-lg text-xs text-blue-300 leading-relaxed">
-        <strong className="text-blue-200">How it works:</strong> Each platform opens an <strong className="text-white">isolated clean browser window</strong> — completely separate from your personal Chrome, no existing sessions, no cookies. Log in normally, then click "I've Logged In". The session is encrypted and stored in Cloudflare KV. Your agents use it to post autonomously.
+      {/* Make.com explanation banner */}
+      <div className="mx-6 mt-4 p-4 bg-purple-900/20 border border-purple-800/40 rounded-lg">
+        <div className="flex items-start gap-3">
+          <div className="text-2xl">⚡</div>
+          <div>
+            <div className="font-bold text-purple-200 mb-1">Powered by Make.com</div>
+            <div className="text-xs text-purple-300 leading-relaxed">
+              Make.com handles all platform logins and OAuth — no browser sessions, no cookies, no Chrome issues.
+              You connect your accounts once inside Make's dashboard, then ProPost sends content via webhook and Make posts it.
+              <strong className="text-white"> API key: e9473f61-9d7f-4e85-b6c0-da2cdca95a7e</strong>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <a href="https://www.make.com/en/login" target="_blank" rel="noreferrer"
+                className="px-3 py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs font-bold">
+                Open Make.com Dashboard →
+              </a>
+              {makeStatus && (
+                <span className="px-3 py-1.5 bg-gray-800 rounded text-xs text-gray-400">
+                  {makeStatus.summary}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="p-6 space-y-8">
-        {groups.map(group => {
-          const groupPlatforms = PLATFORMS.filter(p => p.group === group)
-          return (
+      <div className="p-6 grid grid-cols-12 gap-6">
+        {/* Left: platform list */}
+        <div className="col-span-4 space-y-5">
+          {GROUPS.map(group => (
             <div key={group}>
-              <div className="text-xs text-gray-500 font-bold tracking-widest uppercase mb-3">{group}</div>
-              <div className="grid grid-cols-1 gap-3">
-                {groupPlatforms.map(platform => {
-                  const step = loginSteps[platform.id] ?? 'idle'
-                  const result = results[platform.id]
-                  const status = statuses[platform.id]
-                  const isConnected = status?.status === 'connected' || status?.hasSession
-                  const isCapturing = capturing === platform.id
+              <div className="text-xs text-gray-500 font-bold tracking-widest uppercase mb-2">{group}</div>
+              <div className="space-y-1.5">
+                {PLATFORMS.filter(p => p.group === group).map(platform => {
+                  const status = makeStatus?.platforms[platform.id]
+                  const isConfigured = status?.configured ?? false
+                  const isSelected = selected === platform.id
 
                   return (
-                    <div
+                    <button
                       key={platform.id}
-                      className="bg-gray-900 border rounded-lg p-4 transition-all"
-                      style={{ borderColor: isConnected ? platform.color + '55' : '#1f2937' }}
+                      onClick={() => setSelected(platform.id)}
+                      className="w-full text-left bg-gray-900 border rounded-lg p-3 transition-all hover:bg-gray-800"
+                      style={{ borderColor: isSelected ? platform.color : isConfigured ? platform.color + '44' : '#1f2937' }}
                     >
-                      <div className="flex items-start justify-between gap-4">
-                        {/* Left: platform info */}
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className="w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0 font-bold"
-                            style={{ backgroundColor: platform.color + '22', color: platform.color }}
-                          >
-                            {platform.icon}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-bold text-gray-100 text-sm">{platform.name}</div>
-                            <div className="text-xs text-gray-500 truncate">{platform.description}</div>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {platform.capabilities.map(c => (
-                                <span key={c} className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">{c}</span>
-                              ))}
-                            </div>
-                          </div>
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded flex items-center justify-center text-sm flex-shrink-0 font-bold"
+                          style={{ backgroundColor: platform.color + '22', color: platform.color }}>
+                          {platform.icon}
                         </div>
-
-                        {/* Right: status + action */}
-                        <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                          {getStatusBadge(platform.id)}
-
-                          {/* Action buttons */}
-                          {step === 'idle' && (
-                            <button
-                              onClick={() => startLogin(platform.id, platform.loginUrl)}
-                              className="px-3 py-1.5 rounded text-xs font-bold transition-colors whitespace-nowrap"
-                              style={{ backgroundColor: platform.color, color: 'white' }}
-                            >
-                              {isConnected ? '🔄 Re-login' : '🔐 Connect'}
-                            </button>
-                          )}
-
-                          {step === 'waiting' && (
-                            <div className="flex flex-col items-end gap-1">
-                              <button
-                                onClick={() => captureSession(platform.id)}
-                                className="px-3 py-1.5 bg-green-700 hover:bg-green-600 rounded text-xs font-bold transition-colors whitespace-nowrap"
-                              >
-                                ✅ I've Logged In
-                              </button>
-                              <button
-                                onClick={() => { loginWindows[platform.id]?.close(); resetLogin(platform.id) }}
-                                className="text-xs text-gray-600 hover:text-gray-400"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
-
-                          {step === 'capturing' && (
-                            <span className="text-xs text-yellow-400 animate-pulse">⏳ Saving...</span>
-                          )}
-
-                          {(step === 'done' || step === 'error') && (
-                            <button
-                              onClick={() => resetLogin(platform.id)}
-                              className="text-xs text-gray-500 hover:text-gray-300"
-                            >
-                              {step === 'done' ? '✓ Done — login again?' : '↩ Try again'}
-                            </button>
-                          )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-gray-100">{platform.name}</span>
+                            {isConfigured
+                              ? <span className="text-xs text-green-400 bg-green-900/30 px-1.5 py-0.5 rounded font-bold">✓ Ready</span>
+                              : <span className="text-xs text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded">Setup needed</span>
+                            }
+                          </div>
+                          <div className="text-xs text-gray-600 truncate">{platform.caps.join(' · ')}</div>
                         </div>
                       </div>
-
-                      {/* Status messages */}
-                      {step === 'waiting' && (
-                        <div className="mt-3 p-2 bg-blue-900/20 border border-blue-800/30 rounded text-xs text-blue-300">
-                          🔐 <strong>A new window opened with {platform.name}'s login page.</strong> Log in with your account credentials. When you see your home feed or dashboard, come back here and click "I've Logged In" above.
-                          <div className="mt-1 text-gray-500">If the window is blank or blocked, look for a popup blocked icon in your Chrome address bar and click "Always allow".</div>
-                        </div>
-                      )}
-
-                      {result && (
-                        <div className={`mt-2 p-2 rounded text-xs ${
-                          result.ok ? 'text-green-400 bg-green-900/20' :
-                          result.error ? 'text-red-400 bg-red-900/20' :
-                          'text-blue-400 bg-blue-900/20'
+                      {testResults[platform.id] && (
+                        <div className={`mt-1.5 text-xs rounded p-1 ${
+                          testResults[platform.id].startsWith('✅') ? 'text-green-400 bg-green-900/20' :
+                          testResults[platform.id].startsWith('❌') ? 'text-red-400 bg-red-900/20' :
+                          'text-yellow-400 bg-yellow-900/20'
                         }`}>
-                          {result.ok ? `✅ ${result.message ?? 'Session saved — agent is ready'}` :
-                           result.error ? `❌ ${result.error}` :
-                           result.message}
+                          {testResults[platform.id]}
                         </div>
                       )}
-
-                      {isConnected && step === 'idle' && (
-                        <div className="mt-2 text-xs text-gray-600">
-                          Session active{status?.lastVerified ? ` · Last verified ${new Date(status.lastVerified).toLocaleDateString()}` : ''}
-                        </div>
-                      )}
-                    </div>
+                    </button>
                   )
                 })}
               </div>
             </div>
-          )
-        })}
+          ))}
+        </div>
 
-        {/* Auto-activity summary */}
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-          <div className="text-xs text-purple-400 font-bold tracking-wider mb-3">AUTONOMOUS ACTIVITY (once connected)</div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            {[
-              { platform: 'X', activity: '2 posts/hour · 20 replies/day · threads' },
-              { platform: 'LinkedIn', activity: '2 posts/hour · comment replies' },
-              { platform: 'Instagram', activity: 'Daily posts · stories · 20 DMs/day' },
-              { platform: 'Facebook', activity: 'Daily page posts · comment replies' },
-              { platform: 'TikTok', activity: 'Video scripts · caption generation' },
-              { platform: 'YouTube', activity: 'Community posts · descriptions' },
-              { platform: 'Reddit', activity: '3-5 posts/day · 20 comments/day' },
-              { platform: 'Mastodon', activity: 'Posts every 2-3 hours' },
-            ].map(({ platform, activity }) => (
-              <div key={platform} className="flex justify-between items-center py-1.5 border-b border-gray-800">
-                <span className="text-gray-400 font-medium">{platform}</span>
-                <span className="text-gray-600">{activity}</span>
+        {/* Right: setup instructions */}
+        <div className="col-span-8">
+          {!selected ? (
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
+              <div className="text-4xl mb-4">⚡</div>
+              <div className="text-gray-300 font-bold mb-2">Select a platform to set up</div>
+              <div className="text-xs text-gray-600 max-w-sm mx-auto leading-relaxed mb-6">
+                Click any platform on the left to see step-by-step setup instructions for Make.com.
               </div>
-            ))}
-          </div>
+              <div className="bg-gray-800 rounded-lg p-4 text-left max-w-md mx-auto">
+                <div className="text-xs text-gray-400 font-bold mb-2">QUICK OVERVIEW</div>
+                <ol className="text-xs text-gray-500 space-y-1.5 list-decimal list-inside">
+                  <li>Go to <a href="https://make.com" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">make.com</a> and log in</li>
+                  <li>Create a new Scenario for each platform</li>
+                  <li>Add Webhook trigger → Platform post action</li>
+                  <li>Copy the webhook URL</li>
+                  <li>Add it to Vercel env vars</li>
+                  <li>Test it here — done!</li>
+                </ol>
+              </div>
+            </div>
+          ) : selectedPlatform ? (
+            <div className="bg-gray-900 border rounded-lg overflow-hidden"
+              style={{ borderColor: selectedPlatform.color + '55' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+                <div className="flex items-center gap-2">
+                  <span style={{ color: selectedPlatform.color }}>{selectedPlatform.icon}</span>
+                  <span className="font-bold text-gray-200">{selectedPlatform.name} Setup</span>
+                  {selectedStatus?.configured
+                    ? <span className="text-xs text-green-400 bg-green-900/30 px-2 py-0.5 rounded">✓ Configured</span>
+                    : <span className="text-xs text-yellow-400 bg-yellow-900/30 px-2 py-0.5 rounded">⚠ Not configured</span>
+                  }
+                </div>
+                {selectedStatus?.configured && (
+                  <button
+                    onClick={() => testWebhook(selectedPlatform.id)}
+                    disabled={testing === selectedPlatform.id}
+                    className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 rounded text-xs font-bold"
+                  >
+                    {testing === selectedPlatform.id ? '⏳ Testing...' : '🧪 Send Test Post'}
+                  </button>
+                )}
+              </div>
+
+              {/* Instructions */}
+              <div className="p-5 space-y-4">
+                {/* Step 1 */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <div className="text-xs font-bold text-gray-300 mb-2">STEP 1 — Create a Make.com Scenario</div>
+                  <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
+                    <li>Go to <a href="https://www.make.com/en/login" target="_blank" rel="noreferrer" className="text-purple-400 hover:underline">make.com</a> → log in with your account</li>
+                    <li>Click <strong className="text-gray-200">Create a new scenario</strong></li>
+                    <li>Search for <strong className="text-gray-200">Webhooks</strong> → select <strong className="text-gray-200">Custom Webhook</strong></li>
+                    <li>Click <strong className="text-gray-200">Add</strong> → give it a name like <code className="bg-gray-700 px-1 rounded">ProPost {selectedPlatform.name}</code></li>
+                    <li>Copy the webhook URL that appears</li>
+                  </ol>
+                </div>
+
+                {/* Step 2 */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <div className="text-xs font-bold text-gray-300 mb-2">STEP 2 — Add {selectedPlatform.name} Action</div>
+                  <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
+                    <li>Click the <strong className="text-gray-200">+</strong> button after the webhook</li>
+                    <li>Search for <strong className="text-gray-200">{selectedPlatform.makeModule}</strong></li>
+                    <li>Select <strong className="text-gray-200">Create a Post</strong> (or equivalent action)</li>
+                    <li>Connect your {selectedPlatform.name} account when prompted — Make handles the OAuth</li>
+                    <li>Map the <code className="bg-gray-700 px-1 rounded">content</code> field from the webhook to the post text</li>
+                    <li>Save and <strong className="text-gray-200">turn the scenario ON</strong></li>
+                  </ol>
+                </div>
+
+                {/* Step 3 */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <div className="text-xs font-bold text-gray-300 mb-2">STEP 3 — Add Webhook URL to Vercel</div>
+                  <div className="text-xs text-gray-400 mb-2">
+                    Add this environment variable to your Vercel project:
+                  </div>
+                  <div className="bg-gray-900 rounded p-3 font-mono text-xs">
+                    <div className="text-yellow-400">{selectedStatus?.envVar}</div>
+                    <div className="text-gray-500 mt-1">= https://hook.eu1.make.com/your-webhook-id-here</div>
+                  </div>
+                  <a
+                    href="https://vercel.com/roylandz-media/propost/settings/environment-variables"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-xs text-blue-400 hover:underline"
+                  >
+                    Open Vercel Environment Variables →
+                  </a>
+                </div>
+
+                {/* Step 4 */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <div className="text-xs font-bold text-gray-300 mb-2">STEP 4 — Test It</div>
+                  <div className="text-xs text-gray-400 mb-3">
+                    After adding the env var and redeploying, click the test button above.
+                    ProPost will send a test post through Make to {selectedPlatform.name}.
+                  </div>
+                  {!selectedStatus?.configured && (
+                    <div className="text-xs text-yellow-400 bg-yellow-900/20 rounded p-2">
+                      ⚠ <strong>{selectedStatus?.envVar}</strong> is not set yet. Add it to Vercel first.
+                    </div>
+                  )}
+                  {selectedStatus?.configured && (
+                    <div className="text-xs text-green-400 bg-green-900/20 rounded p-2">
+                      ✓ Webhook URL is configured. Click "Send Test Post" to verify it works end-to-end.
+                    </div>
+                  )}
+                </div>
+
+                {/* What ProPost sends */}
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <div className="text-xs font-bold text-gray-300 mb-2">WHAT PROPOST SENDS TO MAKE</div>
+                  <pre className="text-xs text-gray-400 bg-gray-900 rounded p-3 overflow-x-auto">{JSON.stringify({
+                    platform: selectedPlatform.id,
+                    content: "Your AI-generated post content here...",
+                    media_url: null,
+                    pillar: "ai_news",
+                    agent: "BLAZE",
+                    timestamp: new Date().toISOString(),
+                    source: "propost_empire"
+                  }, null, 2)}</pre>
+                  <div className="text-xs text-gray-600 mt-2">
+                    Map <code className="bg-gray-700 px-1 rounded">content</code> to the post text field in Make.
+                    Use <code className="bg-gray-700 px-1 rounded">media_url</code> for image/video if present.
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -14,7 +14,7 @@ function getPlatformStatus(platform: string): 'connected' | 'not_configured' | '
     case 'facebook':
       return process.env.FACEBOOK_ACCESS_TOKEN && process.env.FACEBOOK_PAGE_ID ? 'connected' : 'not_configured'
     case 'linkedin':
-      return process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_PERSON_URN ? 'connected' : 'not_configured'
+      return process.env.LINKEDIN_ACCESS_TOKEN && process.env.LINKEDIN_AUTHOR_URN ? 'connected' : 'not_configured'
     case 'website':
       return 'connected'
     // Browser-session platforms — status comes from DB only

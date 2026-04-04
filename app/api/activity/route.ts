@@ -22,8 +22,21 @@ export async function GET(_req: NextRequest) {
           ORDER BY timestamp DESC
           LIMIT 100
         `
-        for (const row of (rows as unknown[]).reverse()) {
-          send({ type: 'initial', action: row })
+        for (const row of (rows as Array<Record<string, unknown>>).reverse()) {
+          send({
+            type: 'initial',
+            action: {
+              id: row.id,
+              agentName: row.agent_name,
+              company: row.company,
+              platform: row.platform,
+              type: row.action_type,
+              contentPreview: typeof row.content === 'string' ? row.content.slice(0, 80) : '',
+              status: row.status,
+              platformPostId: row.platform_post_id,
+              timestamp: row.timestamp,
+            },
+          })
         }
       } catch {
         // DB may not be available yet
