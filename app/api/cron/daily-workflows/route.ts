@@ -30,6 +30,7 @@ import { getBestTopic } from '@/lib/content/ai-news-source'
 import { aiRouter } from '@/lib/ai/router'
 import { PLATFORM_PROMPTS, AI_NEWS_FORMULAS } from '@/lib/brand/context'
 import { formatContent } from '@/lib/content/formatter'
+import type { ContentPillar } from '@/lib/types'
 
 // ─── Randomized posting schedule ─────────────────────────────────────────────
 // Returns the two 5-minute windows (0-11) within an hour that should post
@@ -136,6 +137,29 @@ async function postToLinkedIn(pillar: string): Promise<void> {
   logInfo(`[linkedin-post] Queued: ${formatted.content.slice(0, 60)}...`)
 }
 
+// ─── Substack newsletter scheduler ───────────────────────────────────────────
+
+async function publishToSubstack(pillar: string): Promise<void> {
+  if (!process.env.SUBSTACK_PASSWORD || !process.env.SUBSTACK_PUBLICATION_URL) {
+    logInfo(`[substack] Skipping — SUBSTACK_PASSWORD or SUBSTACK_PUBLICATION_URL not set`)
+    return
+  }
+
+  const topic = await getBestTopic()
+
+  await taskOrchestrator.createTask({
+    type: 'newsletter_publish',
+    company: 'substackpro',
+    platform: 'substack',
+    contentPillar: pillar as ContentPillar,
+    priority: 1,
+    assignedAgent: 'QUILL',
+    content: topic.headline,  // QUILL generates full article from this seed
+  })
+
+  logInfo(`[substack] Queued newsletter about: ${topic.headline.slice(0, 60)}...`)
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -203,6 +227,12 @@ export async function POST(req: NextRequest) {
     if (eatHour === 7 && utcMinute < 5) {
       await runContentCalendar().catch(() => {})
       ran.push('CONTENT_CALENDAR')
+    }
+
+    // ── Daily 8AM EAT: Substack newsletter ────────────────────────────────
+    if (eatHour === 8 && utcMinute < 5) {
+      await publishToSubstack(todayPillar).catch((e) => logInfo(`[substack] failed: ${e}`))
+      ran.push('SUBSTACK_NEWSLETTER')
     }
 
     // Log the posting windows for this hour (for debugging)

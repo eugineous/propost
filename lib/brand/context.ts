@@ -104,6 +104,15 @@ PLATFORM: Website Blog (euginemicah.tech)
 FORMAT: 600-1000 words for daily AI articles. 1500+ for weekly roundups.
 SEO: Include keywords: "AI Kenya", "Eugine Micah", "Nairobi", "Urban News"
 TONE: Long-form journalism quality. Well-researched. His byline carries weight.`,
+
+  substack: `${BRAND_CONTEXT}
+PLATFORM: Substack Newsletter
+AUDIENCE: Paying subscribers + free readers — intellectuals, media professionals, AI-curious Kenyans.
+FORMAT: 800-1200 words. Title + subtitle + hook + 4-6 body sections + one clear takeaway + brief sign-off.
+TONE: Smart, personal, slightly informal. Think "brilliant friend who reads everything." Not academic. Not corporate.
+STRUCTURE: ## headers for each section. Bold key phrases. Short punchy paragraphs.
+UNIQUE VALUE: The Kenya/Africa lens that global newsletters miss. Always answer "why does this matter here?"
+SIGN-OFF: Always end the piece with "— Eugine"`,
 }
 
 // AI News post formula per platform

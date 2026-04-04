@@ -7,6 +7,7 @@ import { InstagramAdapter } from './instagram'
 import { FacebookAdapter } from './facebook'
 import { LinkedInAdapter } from './linkedin'
 import { WebsiteAdapter } from './website'
+import { SubstackAdapter } from './substack'
 
 export type { PlatformAdapter, PostContent, PlatformPostResult, PostMetrics } from './x'
 
@@ -25,6 +26,8 @@ function createAdapter(platform: Platform) {
       return new LinkedInAdapter()
     case 'website':
       return new WebsiteAdapter()
+    case 'substack':
+      return new SubstackAdapter()
     default:
       throw new Error(`Unknown platform: ${platform}`)
   }

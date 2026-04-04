@@ -97,6 +97,8 @@ export async function seedAgents(): Promise<void> {
     { name: 'SENTRY', tier: 3, company: 'intelcore' },
     { name: 'MEMORY', tier: 3, company: 'intelcore' },
     { name: 'RISK', tier: 3, company: 'intelcore' },
+    // Tier 3 — SubstackPro
+    { name: 'QUILL', tier: 3, company: 'substackpro' },
     // Tier 4 — Control
     { name: 'QC_AGENT', tier: 4, company: 'system' },
     { name: 'TONE_VALIDATOR', tier: 4, company: 'system' },

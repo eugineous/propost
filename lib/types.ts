@@ -1,4 +1,4 @@
-export type Platform = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'website'
+export type Platform = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'website' | 'substack'
 
 export type ContentPillar =
   | 'ai_news'
@@ -21,6 +21,7 @@ export type TaskType =
   | 'story_publish'
   | 'article_publish'
   | 'blog_publish'
+  | 'newsletter_publish'
   | 'analytics_pull'
   | 'trend_analysis'
   | 'seo_audit'
@@ -46,6 +47,7 @@ export type Company =
   | 'pagepower'
   | 'webboss'
   | 'intelcore'
+  | 'substackpro'
   | 'system'
 
 export type AITask = 'plan' | 'draft' | 'analyze' | 'summarize' | 'generate' | 'validate'

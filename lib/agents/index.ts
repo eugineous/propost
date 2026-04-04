@@ -45,6 +45,9 @@ import { sentry } from './intelcore/trend-analyst'
 import { memory } from './intelcore/memory-agent'
 import { risk } from './intelcore/risk-analyzer'
 
+// Tier 3 — SubstackPro
+import { quill } from './substackpro/newsletter-writer'
+
 // Tier 4 — Control Agents
 import { qcAgent } from './control/qc-agent'
 import { toneValidator } from './control/tone-validator'
@@ -93,6 +96,9 @@ export const agentRegistry: Record<string, BaseAgent> = {
   MEMORY: memory,
   RISK: risk,
 
+  // Tier 3 — SubstackPro
+  QUILL: quill,
+
   // Tier 4 — Control
   QC_AGENT: qcAgent,
   TONE_VALIDATOR: toneValidator,
@@ -109,5 +115,6 @@ export {
   reach, community, pulse,
   build, crawl, speed, shield,
   sentry, memory, risk,
+  quill,
   qcAgent, toneValidator, approvalGate,
 }

@@ -20,6 +20,7 @@ const DAILY_LIMITS: Record<Platform, number> = {
   linkedin: 20,  // 2/hour during active hours
   facebook: 10,
   website: 9999,
+  substack: 2,   // max 2 newsletters/day — quality over quantity
 }
 
 // Per-platform hourly safe thresholds — 2 posts/hour for X and LinkedIn
@@ -29,6 +30,7 @@ const HOURLY_SAFE: Record<Platform, number> = {
   linkedin: 2,   // 2 per hour
   facebook: 3,
   website: 9999,
+  substack: 1,   // 1 newsletter per hour max
 }
 
 // In-memory rate tracking: key = `${platform}:${hourKey}` → count
