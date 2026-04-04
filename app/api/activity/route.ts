@@ -45,10 +45,25 @@ export async function GET(_req: NextRequest) {
       const listener = (event: unknown) => send(event)
       propostEvents.on('activity', listener)
 
+      // Keep-alive ping every 20s
+      const pingInterval = setInterval(() => {
+        try { controller.enqueue(encoder.encode(': ping\n\n')) } catch { /* closed */ }
+      }, 20_000)
+
+      // Auto-close at 55s — client reconnects, gets fresh data
+      const autoClose = setTimeout(() => {
+        clearInterval(pingInterval)
+        propostEvents.off('activity', listener)
+        send({ type: 'reconnect' })
+        try { controller.close() } catch { /* closed */ }
+      }, 55_000)
+
       // Cleanup on close
       _req.signal.addEventListener('abort', () => {
+        clearInterval(pingInterval)
+        clearTimeout(autoClose)
         propostEvents.off('activity', listener)
-        controller.close()
+        try { controller.close() } catch { /* closed */ }
       })
     },
   })

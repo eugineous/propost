@@ -32,7 +32,22 @@ export async function GET(_req: NextRequest) {
       const listener = (event: unknown) => send({ type: 'update', ...(event as object) })
       propostEvents.on('agent:status', listener)
 
+      // Keep-alive ping every 20s (Vercel Hobby SSE limit ~60s — client reconnects)
+      const pingInterval = setInterval(() => {
+        try { controller.enqueue(encoder.encode(': ping\n\n')) } catch { /* closed */ }
+      }, 20_000)
+
+      // Auto-close at 55s so Vercel doesn't kill it mid-stream
+      const autoClose = setTimeout(() => {
+        clearInterval(pingInterval)
+        propostEvents.off('agent:status', listener)
+        send({ type: 'reconnect' })
+        try { controller.close() } catch { /* closed */ }
+      }, 55_000)
+
       _req.signal.addEventListener('abort', () => {
+        clearInterval(pingInterval)
+        clearTimeout(autoClose)
         propostEvents.off('agent:status', listener)
         try { controller.close() } catch { /* already closed */ }
       })

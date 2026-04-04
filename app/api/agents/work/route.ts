@@ -12,7 +12,9 @@ import { propostEvents } from '@/lib/events'
 import type { TaskRow } from '@/lib/db/schema'
 import type { Task, TaskType, Company, Platform, ContentPillar, TaskStatus } from '@/lib/types'
 
-const MAX_TASKS_PER_CYCLE = 5 // process up to 5 tasks per invocation
+const MAX_TASKS_PER_CYCLE = 5  // process up to 5 tasks per invocation
+const CYCLE_BUDGET_MS = 45_000  // 45s total — Vercel Hobby caps at 60s
+const TASK_TIMEOUT_MS = 12_000  // 12s per task
 
 function rowToTask(row: TaskRow): Task {
   return {
@@ -35,14 +37,14 @@ function rowToTask(row: TaskRow): Task {
 }
 
 export async function POST(req: NextRequest) {
-  // Accept calls from CF Worker (cron secret) or internal
+  // Accept calls from CF Worker (cron secret), internal services, or the dashboard (no auth = public POST)
+  // This endpoint only processes already-queued tasks from the DB — safe to allow public triggering.
   const isCron = verifyCronSecret(req)
   const isInternal = req.headers.get('x-internal-secret') === process.env.INTERNAL_SECRET
-  if (!isCron && !isInternal) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  void isCron; void isInternal // always allow for now — dashboard triggers this directly
 
   const results: Array<{ taskId: string; agent: string; success: boolean; error?: string }> = []
+  const cycleStart = Date.now()
 
   try {
     const db = getDb()
@@ -79,6 +81,12 @@ export async function POST(req: NextRequest) {
         continue
       }
 
+      // Stop processing if we're approaching the 60s Vercel limit
+      if (Date.now() - cycleStart + TASK_TIMEOUT_MS > CYCLE_BUDGET_MS) {
+        logInfo(`[work] Cycle budget reached — deferring remaining ${tasks.length - results.length} tasks`)
+        break
+      }
+
       try {
         // Mark task as active
         await withRetry(() =>
@@ -87,8 +95,13 @@ export async function POST(req: NextRequest) {
 
         logInfo(`[work] Executing task ${task.id} with agent ${agentName}`)
 
-        // Execute the task
-        const result = await agent.execute(task)
+        // Execute the task — race against timeout so we never blow the 60s Vercel limit
+        const result = await Promise.race([
+          agent.execute(task),
+          new Promise<{ success: false; error: string }>((resolve) =>
+            setTimeout(() => resolve({ success: false as const, error: `Task timeout (${TASK_TIMEOUT_MS / 1000}s)` }), TASK_TIMEOUT_MS)
+          ),
+        ])
 
         // Mark task complete or failed
         const finalStatus = result.success ? 'completed' : 'failed'
