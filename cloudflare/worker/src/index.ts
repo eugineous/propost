@@ -74,6 +74,9 @@ export default {
     // ── ALWAYS: daily-workflows every 5 min (handles randomized X+LinkedIn posting) ──
     jobs.push({ path: '/api/cron/daily-workflows' })
 
+    // ── ALWAYS: run the agent work loop every 5 min — picks up queued tasks from DB ──
+    jobs.push({ path: '/api/agents/work' })
+
     // ── AI News: 6AM, 9AM, 12PM, 3PM EAT (3,6,9,12 UTC) ──
     if ([3, 6, 9, 12].includes(utcH) && utcM < 5) {
       jobs.push({ path: '/api/cron/ai-news' })
