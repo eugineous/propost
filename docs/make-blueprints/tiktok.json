@@ -1,0 +1,48 @@
+{
+  "name": "ProPost → TikTok",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 4013190
+      },
+      "filter": {
+        "name": "",
+        "conditions": []
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "ProPost TikTok Webhook",
+              "data": { "editable": "true" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "tiktok:CreateVideo",
+      "version": 1,
+      "parameters": {
+        "connection": "__REPLACE_WITH_TIKTOK_CONNECTION_ID__"
+      },
+      "mapper": {
+        "title": "{{left(1.content; 150)}}",
+        "videoUrl": "{{1.media_url}}"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1
+  }
+}

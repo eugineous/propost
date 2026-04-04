@@ -1,0 +1,55 @@
+{
+  "name": "ProPost → Facebook",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 4013188
+      },
+      "filter": {
+        "name": "",
+        "conditions": []
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "ProPost Facebook Webhook",
+              "data": { "editable": "true" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "facebook-pages:CreatePost",
+      "version": 4,
+      "parameters": {
+        "connection": 13440088
+      },
+      "mapper": {
+        "message": "{{1.content}}",
+        "link": "{{1.media_url}}"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 },
+        "restore": {
+          "parameters": {
+            "connection": {
+              "label": "Facebook (RECONNECT REQUIRED — expired 2026-03-05)"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1
+  }
+}

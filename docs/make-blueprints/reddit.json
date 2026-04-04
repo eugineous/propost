@@ -1,0 +1,58 @@
+{
+  "name": "ProPost → Reddit",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 4013192
+      },
+      "filter": {
+        "name": "",
+        "conditions": []
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "ProPost Reddit Webhook",
+              "data": { "editable": "true" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "reddit:CreatePost",
+      "version": 1,
+      "parameters": {
+        "connection": 10212956
+      },
+      "mapper": {
+        "subreddit": "{{ifempty(1.subreddit; \"artificial\")}}",
+        "title": "{{ifempty(1.title; left(1.content; 100))}}",
+        "text": "{{1.content}}",
+        "nsfw": "false",
+        "spoiler": "false"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 },
+        "restore": {
+          "parameters": {
+            "connection": {
+              "label": "My reddit connection"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1
+  }
+}

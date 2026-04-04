@@ -1,0 +1,58 @@
+{
+  "name": "ProPost → YouTube",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 4013191
+      },
+      "filter": {
+        "name": "",
+        "conditions": []
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "ProPost YouTube Webhook",
+              "data": { "editable": "true" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "youtube:UploadVideo",
+      "version": 1,
+      "parameters": {
+        "connection": 12971423
+      },
+      "mapper": {
+        "title": "{{ifempty(1.title; left(1.content; 100))}}",
+        "description": "{{1.content}}",
+        "videoUrl": "{{1.media_url}}",
+        "privacyStatus": "public",
+        "categoryId": "22"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 },
+        "restore": {
+          "parameters": {
+            "connection": {
+              "label": "My Google connection (euginemicah@gmail.com)"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1
+  }
+}

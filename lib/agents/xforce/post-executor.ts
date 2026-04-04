@@ -48,12 +48,7 @@ export class BLAZE extends BaseAgent {
         }
       }
 
-      // 2. Apply HAWK delay
-      const delay = await hawk.getDelay('x')
-      logInfo(`[BLAZE] Applying HAWK delay: ${delay}ms`)
-      await sleep(delay)
-
-      // 3. Get content from task or generate via AI Router
+      // 2. Get content from task or generate via AI Router
       const taskData = task.result as Record<string, unknown> | undefined
       let content: string = (taskData?.content as string) ?? ''
 

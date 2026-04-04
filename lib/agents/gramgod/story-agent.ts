@@ -45,11 +45,7 @@ export class STORY extends BaseAgent {
         return { success: false, error: 'STORY requires mediaUrl in task data' }
       }
 
-      // 3. Apply HAWK delay
-      const delay = await hawk.getDelay('instagram')
-      await new Promise((r) => setTimeout(r, delay))
-
-      // 4. Publish story
+      // 3. Publish story
       const result = await this.igAdapter.storyPublish({
         text: caption,
         mediaUrls: [mediaUrl],

@@ -42,11 +42,7 @@ export class REEL extends BaseAgent {
 
       const caption = captionResponse.content
 
-      // 3. Apply HAWK delay
-      const delay = await hawk.getDelay('instagram')
-      await new Promise((r) => setTimeout(r, delay))
-
-      // 4. Publish reel via InstagramAdapter.reelPublish()
+      // 3. Publish reel via InstagramAdapter.reelPublish()
       const result = await this.igAdapter.reelPublish({
         text: caption,
         mediaUrls: [videoUrl],

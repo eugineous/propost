@@ -38,10 +38,7 @@ export class REACH extends BaseAgent {
 
       const content = generated.content
 
-      // 3. Apply HAWK delay and post
-      const delay = await hawk.getDelay('facebook')
-      await new Promise((r) => setTimeout(r, delay))
-
+      // 3. Post
       const fbAdapter = getPlatformAdapter('facebook')
       const result = await fbAdapter.post({ text: content })
 

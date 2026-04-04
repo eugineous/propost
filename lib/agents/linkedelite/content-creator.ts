@@ -56,10 +56,7 @@ export class ORATOR extends BaseAgent {
         return { success: true, data: { queued: true, reason: 'tone_validation_failed' } }
       }
 
-      // 4. Apply HAWK delay and post
-      const delay = await hawk.getDelay('linkedin')
-      await new Promise((r) => setTimeout(r, delay))
-
+      // 4. Post
       const liAdapter = getPlatformAdapter('linkedin')
       const result = await liAdapter.post({ text: content })
 

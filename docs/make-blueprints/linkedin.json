@@ -1,0 +1,62 @@
+{
+  "name": "ProPost → LinkedIn",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 4013189
+      },
+      "filter": {
+        "name": "",
+        "conditions": []
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "ProPost LinkedIn Webhook",
+              "data": { "editable": "true" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "linkedin2:CreateShareUpdate",
+      "version": 2,
+      "parameters": {
+        "connection": 12971453
+      },
+      "mapper": {
+        "distributionLinkedInMembersGroup": "PUBLIC",
+        "lifecycleState": "PUBLISHED",
+        "text": {
+          "text": "{{1.content}}",
+          "annotations": []
+        },
+        "comment": {
+          "commentType": "NONE"
+        }
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 },
+        "restore": {
+          "parameters": {
+            "connection": {
+              "label": "My LinkedIn connection (expires 2026-11-10)"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1
+  }
+}
