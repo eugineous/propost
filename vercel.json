@@ -3,16 +3,37 @@
     "app/api/**": { "maxDuration": 60 },
     "app/api/workflows/**": { "maxDuration": 300 },
     "app/api/cron/**": { "maxDuration": 300 },
-    "app/api/agents/work": { "maxDuration": 300 }
+    "app/api/agents/work": { "maxDuration": 300 },
+    "app/api/agents/startup": { "maxDuration": 60 }
   },
   "crons": [
+    {
+      "path": "/api/agents/work",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-workflows",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/replies",
+      "schedule": "0 6,10,15 * * *"
+    },
+    {
+      "path": "/api/cron/content-schedule",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/health",
+      "schedule": "0 */2 * * *"
+    },
     {
       "path": "/api/cron/ai-news",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/daily-workflows",
-      "schedule": "0 9 * * *"
+      "path": "/api/cron/analytics",
+      "schedule": "0 0 * * *"
     }
   ]
 }
