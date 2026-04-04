@@ -98,19 +98,20 @@ export async function POST(req: NextRequest) {
         // Execute the task — race against timeout so we never blow the 60s Vercel limit
         const result = await Promise.race([
           agent.execute(task),
-          new Promise<{ success: false; error: string }>((resolve) =>
-            setTimeout(() => resolve({ success: false as const, error: `Task timeout (${TASK_TIMEOUT_MS / 1000}s)` }), TASK_TIMEOUT_MS)
+          new Promise<{ success: false; data?: undefined; error: string }>((resolve) =>
+            setTimeout(() => resolve({ success: false as const, data: undefined, error: `Task timeout (${TASK_TIMEOUT_MS / 1000}s)` }), TASK_TIMEOUT_MS)
           ),
         ])
 
         // Mark task complete or failed
         const finalStatus = result.success ? 'completed' : 'failed'
+        const resultData = 'data' in result && result.data ? JSON.stringify(result.data) : null
         await withRetry(() =>
           db`
             UPDATE tasks
             SET status = ${finalStatus},
                 completed_at = NOW(),
-                result = ${result.data ? JSON.stringify(result.data) : null},
+                result = ${resultData},
                 error = ${result.error ?? null}
             WHERE id = ${task.id}
           `
