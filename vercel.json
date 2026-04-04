@@ -8,28 +8,16 @@
   },
   "crons": [
     {
-      "path": "/api/agents/work",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/cron/daily-workflows",
-      "schedule": "0 * * * *"
+      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/cron/replies",
-      "schedule": "0 6,10,15 * * *"
-    },
-    {
-      "path": "/api/cron/content-schedule",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/health",
-      "schedule": "0 */2 * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/ai-news",
-      "schedule": "0 6 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/analytics",

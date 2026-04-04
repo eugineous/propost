@@ -495,9 +495,17 @@ export default function EmpireOverview() {
 
   const refresh = useCallback(() => setRefreshKey(k => k + 1), [])
 
-  // Auto-init on cold start
+  // Auto-init on cold start + trigger work loop every 5 min while page is open
   useEffect(() => {
+    // Initialize agents
     fetch('/api/agents/startup', { method: 'POST' }).catch(() => {})
+    // Trigger first work loop
+    fetch('/api/cron/daily-workflows', { method: 'POST' }).catch(() => {})
+    // Keep agents working: call replies daily workflow every 5 min while dashboard is open
+    const workInterval = setInterval(() => {
+      fetch('/api/agents/startup', { method: 'POST' }).catch(() => {})
+    }, 5 * 60 * 1000)
+    return () => clearInterval(workInterval)
   }, [])
 
   // SSE: agent statuses
