@@ -12,9 +12,9 @@ import { propostEvents } from '@/lib/events'
 import type { TaskRow } from '@/lib/db/schema'
 import type { Task, TaskType, Company, Platform, ContentPillar, TaskStatus } from '@/lib/types'
 
-const MAX_TASKS_PER_CYCLE = 5  // process up to 5 tasks per invocation
-const CYCLE_BUDGET_MS = 45_000  // 45s total — Vercel Hobby caps at 60s
-const TASK_TIMEOUT_MS = 12_000  // 12s per task
+const MAX_TASKS_PER_CYCLE = 3  // process up to 3 tasks per invocation (more time per task)
+const CYCLE_BUDGET_MS = 50_000  // 50s total — Vercel Hobby caps at 60s
+const TASK_TIMEOUT_MS = 25_000  // 25s per task — enough for AI gen + API call + retries
 
 function rowToTask(row: TaskRow): Task {
   return {

@@ -6,8 +6,10 @@ import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
 import { hawk } from '../../hawk/engine'
 import { getPlatformAdapter } from '../../platforms/index'
+import { postViaMake } from '../../make/client'
 import { logAction, logInfo, logError } from '../../logger'
 import { PLATFORM_PROMPTS } from '../../brand/context'
+import { PlatformAPIError } from '../../errors'
 import type { Task } from '../../types'
 
 const THREAD_PART_DELAY_MS = 2000
@@ -70,10 +72,35 @@ export class BLAZE extends BaseAgent {
         return await this.publishThread(task, content)
       }
 
-      // 5. Post to X
+      // 5. Try Make.com first (free, no API credits needed)
+      const makeResult = await postViaMake({
+        platform: 'x',
+        content: content.slice(0, 280),
+        pillar: task.contentPillar,
+        agentName: this.name,
+      })
+
+      if (makeResult.ok) {
+        logInfo(`[BLAZE] Posted via Make.com webhook`)
+        await logAction({
+          taskId: task.id,
+          agentName: this.name,
+          company: this.company,
+          platform: 'x',
+          actionType: 'post',
+          content,
+          status: 'success',
+          platformResponse: { method: 'make_webhook' },
+        })
+        await hawk.recordAction('x')
+        await this.setStatus('idle')
+        return { success: true, data: { method: 'make_webhook' } }
+      }
+
+      // 6. Fall back to direct X API
+      logInfo(`[BLAZE] Make.com not available (${makeResult.error}), trying direct X API`)
       const result = await xAdapter.post({ text: content.slice(0, 280) })
 
-      // 6. Log action
       await logAction({
         taskId: task.id,
         agentName: this.name,
@@ -91,6 +118,21 @@ export class BLAZE extends BaseAgent {
 
       return { success: true, platformPostId: result.postId, data: { postId: result.postId, url: result.url } }
     } catch (err) {
+      // 402 CreditsDepleted — X API requires paid plan. Log clearly and fail gracefully.
+      if (err instanceof PlatformAPIError && err.statusCode === 402) {
+        logError(`[BLAZE] X API credits depleted (402). Activate Make.com X scenario to post for free.`, err)
+        await logAction({
+          taskId: task.id,
+          agentName: this.name,
+          company: this.company,
+          platform: 'x',
+          actionType: 'post',
+          status: 'failed',
+          platformResponse: { error: 'X API credits depleted. Make.com scenario not active.' },
+        })
+        await this.setStatus('idle')
+        return { success: false, error: 'X API credits depleted — activate Make.com X scenario in make.com dashboard' }
+      }
       logError(`[BLAZE] Post failed`, err, { taskId: task.id })
       await logAction({
         taskId: task.id,

@@ -5,6 +5,7 @@ import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
 import { hawk } from '../../hawk/engine'
 import { getPlatformAdapter } from '../../platforms/index'
+import { postViaMake } from '../../make/client'
 import { logAction, logInfo } from '../../logger'
 import type { Task } from '../../types'
 
@@ -42,7 +43,34 @@ export class CAPTION extends BaseAgent {
 
       const content = generated.content
 
-      // 3. Post
+      // 3. Try Make.com first (handles image requirement via Make's Instagram app)
+      const makeResult = await postViaMake({
+        platform: 'instagram',
+        content,
+        mediaUrl,
+        pillar: task.contentPillar,
+        agentName: this.name,
+      })
+
+      if (makeResult.ok) {
+        logInfo(`[CAPTION] Posted via Make.com webhook`)
+        await logAction({
+          taskId: task.id,
+          agentName: this.name,
+          company: this.company,
+          platform: 'instagram',
+          actionType: 'post',
+          content,
+          status: 'success',
+          platformResponse: { method: 'make_webhook' },
+        })
+        await hawk.recordAction('instagram')
+        await this.setStatus('idle')
+        return { success: true, data: { method: 'make_webhook' } }
+      }
+
+      // 4. Fall back to direct Instagram Graph API (requires image URL)
+      logInfo(`[CAPTION] Make.com unavailable, trying direct API`)
       const igAdapter = getPlatformAdapter('instagram')
       const result = await igAdapter.post({
         text: content,
