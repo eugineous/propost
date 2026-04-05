@@ -18,18 +18,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-// Pillar-specific X post prompts
+// Pillar-specific X post prompts — each gets a direct, human take
 const PILLAR_PROMPTS: Record<string, string> = {
-  ai_news: `Write a sharp X post about this AI news story. Under 280 characters. Lead with what CHANGED. Add the Kenyan/African angle. End with a provocative question or take. No AI filler phrases. Use em dashes (—) not hyphens.`,
-  trending_topics: `Write a hot take X post on this trending topic. Under 200 characters. Polarizing but not toxic. Take a clear position. No hedging.`,
-  elite_conversations: `Write an X post for an elite conversation thread. Under 280 characters. Something the top 1% talks about. Sharp. Quotable.`,
-  youth_empowerment: `Write an X post for young Kenyans. Under 280 characters. Real talk about money, confidence, or getting ahead. Not preachy — specific.`,
-  kenyan_entertainment: `Write an X post about Kenyan entertainment. Under 280 characters. Commentary, not just reporting. Give the take nobody else is giving.`,
-  personal_story: `Write an X post from Eugine's personal story. Under 280 characters. Specific moment. Universal lesson.`,
-  entrepreneurship: `Write an X post about entrepreneurship. Under 280 characters. Building, pitching, or monetizing. Real and specific.`,
-  culture_identity: `Write an X post about Kenyan culture or identity. Under 280 characters. Nairobi lens. Culturally grounded.`,
-  media_journalism: `Write an X post about media or journalism. Under 280 characters. Industry insider perspective. Sharp.`,
-  fashion: `Write an X post about fashion. Under 280 characters. Style as communication. Nairobi aesthetic.`,
+  ai_news: `Write ONE X post about an AI news development. Under 230 characters. Lead with the Kenyan/Nairobi angle or implication. End with a sharp question or statement. First person. No preamble.`,
+  trending_topics: `Write ONE X post reacting to something trending. Under 200 characters. Take a clear position — no hedging. First person. Nairobi lens.`,
+  elite_conversations: `Write ONE X post about wealth, power, or access. Under 230 characters. Something sharp and quotable. The take most people won't say out loud.`,
+  youth_empowerment: `Write ONE X post for young Kenyans grinding. Under 220 characters. Real and specific — no generic motivation. First person.`,
+  kenyan_entertainment: `Write ONE X post commentary on Kenyan music, TV, or celebrity. Under 220 characters. Commentary not reporting. Give the take nobody else is giving.`,
+  personal_story: `Write ONE X post from a personal moment or lesson. Under 220 characters. Specific. Vulnerable if needed. Universal truth.`,
+  entrepreneurship: `Write ONE X post about building or monetizing in Kenya. Under 230 characters. Real, specific, earned insight.`,
+  culture_identity: `Write ONE X post about Nairobi life or Kenyan identity. Under 220 characters. Culturally grounded. Sharp observation.`,
+  media_journalism: `Write ONE X post about media or journalism in Africa. Under 220 characters. Industry insider perspective.`,
+  fashion: `Write ONE X post about style, fashion, or personal brand. Under 200 characters. Nairobi aesthetic. Style as power.`,
 }
 
 export class BLAZE extends BaseAgent {
@@ -56,13 +56,22 @@ export class BLAZE extends BaseAgent {
 
       if (!content) {
         const pillar = task.contentPillar ?? 'ai_news'
-        const pillarPrompt = PILLAR_PROMPTS[pillar] ?? PILLAR_PROMPTS.ai_news
+        const pillarAngle = PILLAR_PROMPTS[pillar] ?? PILLAR_PROMPTS.ai_news
         const generated = await aiRouter.route(
           'generate',
-          pillarPrompt,
-          { platform: 'x', contentPillar: pillar, taskId: task.id, systemPrompt: PLATFORM_PROMPTS.x }
+          `You ARE Eugine Micah posting on X/Twitter. AI Builder & TV Host in Nairobi, Kenya. Sharp takes, cultural authority, Kenyan angle.
+
+TASK: ${pillarAngle}
+
+ABSOLUTE RULES:
+1. Output ONLY the tweet text. Nothing else. No "Here's a tweet:", no quotes around it, no explanation.
+2. First person always. Under 260 characters.
+3. No hashtags OR max 1 if truly necessary.
+4. Em dashes (—) not hyphens. No exclamation marks.
+5. Never use: game-changer / delve / dive into / unlock / in today's world`,
+          { systemPrompt: PLATFORM_PROMPTS.x, platform: 'x', contentPillar: pillar }
         )
-        content = generated.content
+        content = generated.content.trim().replace(/^["']|["']$/g, '') // strip surrounding quotes if any
       }
 
       const xAdapter = getPlatformAdapter('x')

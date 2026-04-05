@@ -178,17 +178,21 @@ export async function POST(req: NextRequest) {
   logInfo(`[daily-workflows] UTC ${utcHour}:${String(utcMinute).padStart(2, '0')} | EAT ${eatHour}:${String(utcMinute).padStart(2, '0')} | Pillar: ${todayPillar}`)
 
   try {
-    // ── X: 2 posts per hour at randomized minutes ─────────────────────────
-    if (shouldPostNow(utcHour, utcMinute, utcDay)) {
+    // ── X: 3 posts per day at randomized times (NOT every hour)
+    // Post at 3 specific EAT hours only: 8AM, 1PM, 7PM
+    // This gives human-like spacing and avoids spam detection
+    const X_POST_HOURS_EAT = [8, 13, 19]
+    const isXPostHour = X_POST_HOURS_EAT.includes(eatH)
+    if (isXPostHour && shouldPostNow(utcHour, utcMinute, utcDay)) {
       await postToX(todayPillar).catch((e) => logInfo(`[x-post] failed: ${e}`))
       ran.push('X_POST')
     }
 
-    // ── LinkedIn: 2 posts per hour at randomized minutes (offset by 2 windows) ──
-    // Use a different seed offset so LinkedIn doesn't post at same time as X
-    const linkedinWindows = getPostingWindows((utcHour + 3) % 24, utcDay + 1)
-    const currentWindow = Math.floor(utcMinute / 5)
-    if (linkedinWindows.includes(currentWindow)) {
+    // ── LinkedIn: 1 post per day ONLY — quality over quantity
+    // Best posting time: 8AM-9AM EAT (highest engagement for Kenyan audience)
+    // One window only — 8AM EAT = 5AM UTC
+    const isLinkedInHour = eatH === 8 && utcMinute < 10
+    if (isLinkedInHour && !ran.includes('LINKEDIN_POST')) {
       await postToLinkedIn(todayPillar).catch((e) => logInfo(`[linkedin-post] failed: ${e}`))
       ran.push('LINKEDIN_POST')
     }

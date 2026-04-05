@@ -19,25 +19,66 @@ const CONSTRAINTS: Record<Platform, { maxLength?: number; minLength?: number; re
   website: {},
 }
 
-// Common AI filler phrases to strip
-const AI_FILLER = [
-  'certainly!', 'of course!', 'absolutely!', 'great question',
-  'as an ai', 'i am an ai', 'i cannot', 'i apologize',
-  'in conclusion,', 'to summarize,', 'in summary,',
-]
-
 // Instagram hashtag blocks by pillar
 const HASHTAG_BLOCKS: Record<string, string> = {
-  ai_news: '#AI #ArtificialIntelligence #TechNews #AINews #MachineLearning #Kenya #Africa',
-  youth_empowerment: '#YouthEmpowerment #AfricanYouth #Kenya #Hustle #Growth',
-  trending_topics: '#Trending #Kenya #Africa #Viral',
-  elite_conversations: '#Leadership #Business #Africa #Entrepreneurship',
-  kenyan_entertainment: '#Kenya #Nairobi #KenyanEntertainment #AfricanCulture',
-  fashion: '#Fashion #AfricanFashion #Style #Kenya',
-  media_journalism: '#Media #Journalism #Africa #News',
-  personal_story: '#PersonalGrowth #Story #Authentic #Kenya',
-  entrepreneurship: '#Entrepreneurship #Business #Africa #Startup',
-  culture_identity: '#AfricanCulture #Identity #Kenya #Heritage',
+  ai_news: '#AI #ArtificialIntelligence #TechNews #AINews #MachineLearning #Kenya #Africa #Nairobi #NairobiTech #EugineMicah',
+  youth_empowerment: '#YouthEmpowerment #AfricanYouth #Kenya #Hustle #Growth #Nairobi #KenyanYouth',
+  trending_topics: '#Trending #Kenya #Africa #Viral #Nairobi',
+  elite_conversations: '#Leadership #Business #Africa #Entrepreneurship #Nairobi #KenyanBusiness',
+  kenyan_entertainment: '#Kenya #Nairobi #KenyanEntertainment #AfricanCulture #UrbanNews',
+  fashion: '#Fashion #AfricanFashion #Style #Kenya #NairobiStyle',
+  media_journalism: '#Media #Journalism #Africa #News #KenyanMedia',
+  personal_story: '#PersonalGrowth #Story #Authentic #Kenya #BornBrokeBuiltLoud',
+  entrepreneurship: '#Entrepreneurship #Business #Africa #Startup #Nairobi',
+  culture_identity: '#AfricanCulture #Identity #Kenya #Heritage #Nairobi',
+}
+
+// Patterns that indicate AI preamble/meta-text that must be stripped before posting
+const PREAMBLE_PATTERNS = [
+  // "Here's a [type] post [for X] [on Y]:" — catch-all
+  /^Here(?:'s| is)\s+(?:a\s+)?(?:professional\s+)?(?:great\s+)?(?:LinkedIn|X|Twitter|Instagram|Facebook|social media)?\s*post(?:\s+for\s+[^:\n]+)?(?:\s+on\s+[^:\n]+)?:\s*\n+/i,
+  // "Here's a post that meets the requirements:"
+  /^Here(?:'s| is)\s+a\s+post\s+that\s+meets\s+the\s+requirements?:\s*\n+/i,
+  // Generic "Here's [anything]:" opener
+  /^Here(?:'s| is)\s+[^:\n]{0,100}:\s*\n+/i,
+  // "Below is a [type] post:"
+  /^Below\s+is\s+[^:\n]{0,100}:\s*\n+/i,
+  // "This is a [type] post:"
+  /^This\s+is\s+a\s+[^:\n]{0,100}:\s*\n+/i,
+]
+
+/**
+ * Strip AI preamble text that should never appear in a real post.
+ * Also fixes hashtag formatting (hashtag#tag → #tag).
+ */
+function stripAIPreamble(text: string): string {
+  let content = text.trim()
+
+  // Strip preamble patterns
+  for (const pattern of PREAMBLE_PATTERNS) {
+    const stripped = content.replace(pattern, '').trim()
+    if (stripped.length > 50) {
+      content = stripped
+      break // only strip one preamble (they don't stack)
+    }
+  }
+
+  // Fix "hashtag#tag" → "#tag" (LinkedIn markdown artifact)
+  content = content.replace(/\bhashtag#/gi, '#')
+
+  // Fix "hash#tag" → "#tag"
+  content = content.replace(/\bhash#/gi, '#')
+
+  // Strip trailing "— [AgentName]" signatures the AI sometimes adds
+  content = content.replace(/\s*—\s*(ORATOR|BLAZE|NOVA|CAPTION|CHIEF|AURORA|ZARA|QUILL|REACH|SCOUT|BOLT|PIXEL|SPARK)\s*$/i, '').trim()
+
+  // Strip "As [AgentName]," openers
+  content = content.replace(/^As\s+(ORATOR|BLAZE|NOVA|CAPTION|CHIEF|AURORA|ZARA|QUILL|REACH|SCOUT|BOLT|PIXEL|SPARK)[,\s]/i, '').trim()
+
+  // Strip "At [AgentName]," references
+  content = content.replace(/\bAt\s+(ORATOR|BLAZE|NOVA|CAPTION|CHIEF|AURORA|ZARA|QUILL|REACH|SCOUT|BOLT|PIXEL|SPARK)[,\s]/gi, 'In our work, ').trim()
+
+  return content
 }
 
 /**
@@ -51,12 +92,11 @@ export function formatContent(
   const warnings: string[] = []
   let content = raw.trim()
 
-  // Strip AI filler
-  for (const filler of AI_FILLER) {
-    if (content.toLowerCase().includes(filler)) {
-      content = content.replace(new RegExp(filler, 'gi'), '').trim()
-      warnings.push(`Stripped AI filler: "${filler}"`)
-    }
+  // Strip AI preamble and fix hashtag format (always runs first)
+  const cleaned = stripAIPreamble(content)
+  if (cleaned !== content) {
+    warnings.push('Stripped AI preamble/meta-text')
+    content = cleaned
   }
 
   const constraints = CONSTRAINTS[platform]
@@ -85,11 +125,11 @@ export function formatContent(
     }
   }
 
-  // Facebook: add community framing if missing
+  // Facebook: add engagement prompt if missing
   if (platform === 'facebook') {
     if (!content.includes('?') && !content.toLowerCase().includes('what do you think')) {
-      content = content + '\n\nWhat do you think? Share your thoughts below 👇'
-      warnings.push('Added community engagement prompt for Facebook')
+      content = content + '\n\nWhat do you think? Drop your thoughts below.'
+      warnings.push('Added engagement prompt for Facebook')
     }
   }
 

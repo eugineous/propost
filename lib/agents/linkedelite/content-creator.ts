@@ -7,6 +7,8 @@ import { hawk } from '../../hawk/engine'
 import { getPlatformAdapter } from '../../platforms/index'
 import { logAction, logInfo } from '../../logger'
 import { getDb, withRetry } from '../../db/client'
+import { PLATFORM_PROMPTS } from '../../brand/context'
+import { formatContent } from '../../content/formatter'
 import type { Task } from '../../types'
 
 export class ORATOR extends BaseAgent {
@@ -29,34 +31,40 @@ export class ORATOR extends BaseAgent {
       let content: string = (taskData?.content as string) ?? ''
 
       if (!content) {
-        // Generate professional post via AI Router
         const pillar = task.contentPillar ?? await this.getActivePillar()
+
+        // Pillar-specific LinkedIn post angles — each gives the AI a specific human angle
+        const PILLAR_ANGLES: Record<string, string> = {
+          ai_news: `Write about a recent AI development and its direct meaning for Kenya/Africa. Start with a bold first-person hook: "I've been watching [X] for [Y] years..." or "Everyone's talking about [topic]. Nobody's asking what it means for Nairobi." 3-4 short paragraphs. End with 1 direct question. 3-4 hashtags.`,
+          youth_empowerment: `Write about getting ahead as a young Kenyan professional — real, specific advice. Start with a moment or observation. 3-4 paragraphs. End with one question. 3-4 hashtags.`,
+          elite_conversations: `Write about wealth, access, or leadership the top 1% in Kenya discusses but most avoid. Bold opening. Confident. 3-4 paragraphs. Provocative question at end. 3-4 hashtags.`,
+          entrepreneurship: `Write about building a media or digital business in Kenya — share a specific lesson or insight from your experience. First-person, specific. 3-4 paragraphs. 3-4 hashtags.`,
+          media_journalism: `Write about the state of media or journalism in Kenya/Africa. Industry insider perspective. What's changing, what's broken. 3-4 paragraphs. 3-4 hashtags.`,
+          personal_story: `Write from your personal journey — from growing up in Western Kenya (Bunyore/Maragoli) to building a media career in Nairobi. One specific moment. Universal lesson. First-person. 3-4 paragraphs. 3-4 hashtags.`,
+          trending_topics: `Write reacting to a major trend in tech, media, or business with the Kenyan angle front and center. Sharp take. 3-4 paragraphs. 3-4 hashtags.`,
+        }
+
+        const angle = PILLAR_ANGLES[pillar] ?? PILLAR_ANGLES.ai_news
+
         const generated = await aiRouter.route(
           'generate',
-          `Write a professional LinkedIn post for Eugine Micah about: ${pillar}. 
-          Requirements: minimum 150 characters, professional long-form format, 
-          authority-driven tone, culturally grounded, storytelling-forward. 
-          Use em dashes for emphasis. No AI filler phrases like "delve", "game-changer", "dive into".`,
-          { platform: 'linkedin', contentPillar: pillar, role: 'ORATOR' }
+          `You ARE Eugine Micah writing your own LinkedIn post. AI Builder & TV Host based in Nairobi. Urban News host on StarTimes. Author of "Born Broke, Built Loud." 2,665 followers counting on real content.
+
+WRITE THIS POST: ${angle}
+
+ABSOLUTE RULES — breaking any = discard the whole post:
+1. Start the post immediately with its first word. DO NOT write "Here's a post:", "Here is:", "Below is:", or ANY intro before the post.
+2. Write in first person (I, my, we). Never third person about yourself.
+3. Never use: "game-changer" / "delve into" / "dive into" / "in today's fast-paced world" / "unlock your potential" / "excited to share" / "leverage" / "synergies"
+4. Hashtags use # symbol only. Never "hashtag#". Max 4 hashtags, at the very end.
+5. Em dashes (—) for emphasis. Never plain hyphens (-).
+6. No bold formatting on LinkedIn — write plain text only.`,
+          { systemPrompt: PLATFORM_PROMPTS.linkedin, platform: 'linkedin', contentPillar: pillar }
         )
-        content = generated.content
+        content = formatContent(generated.content, 'linkedin', pillar).content
       }
 
-      // 3. Pass through Tone Validator before publishing
-      const toneCheck = await aiRouter.route(
-        'validate',
-        `Validate this LinkedIn post for tone compliance. Check for: authority-driven voice, no AI filler phrases (delve, game-changer, dive into, in today's world), culturally grounded, storytelling-forward. Post: "${content}"`,
-        { role: 'TONE_VALIDATOR', platform: 'linkedin' }
-      )
-
-      if (toneCheck.content.toLowerCase().includes('fail') || toneCheck.content.toLowerCase().includes('reject')) {
-        logInfo(`[ORATOR] Tone validation failed, submitting to approval queue`)
-        await this.submitToApprovalQueue(task, content)
-        await this.setStatus('idle')
-        return { success: true, data: { queued: true, reason: 'tone_validation_failed' } }
-      }
-
-      // 4. Post
+      // 3. Post
       const liAdapter = getPlatformAdapter('linkedin')
       const result = await liAdapter.post({ text: content })
 

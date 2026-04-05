@@ -13,24 +13,24 @@ export interface RateLimitStatus {
   haltedUntil?: Date
 }
 
-// Per-platform daily limits — raised for high-frequency posting
+// Per-platform daily limits — human-safe posting volumes
 const DAILY_LIMITS: Record<Platform, number> = {
-  x: 48,        // 2/hour × 24h = 48 max (HAWK will enforce safe spacing)
-  instagram: 25,
-  linkedin: 20,  // 2/hour during active hours
-  facebook: 10,
+  x: 5,          // 3-5 posts/day on X — active but not spammy
+  instagram: 3,  // 1-3 posts/day Instagram
+  linkedin: 1,   // 1 post/day LinkedIn — quality is everything here
+  facebook: 3,   // 2-3 posts/day Facebook
   website: 9999,
-  substack: 2,   // max 2 newsletters/day — quality over quantity
+  substack: 1,   // 1 newsletter/day max
 }
 
-// Per-platform hourly safe thresholds — 2 posts/hour for X and LinkedIn
+// Per-platform hourly safe thresholds
 const HOURLY_SAFE: Record<Platform, number> = {
-  x: 2,          // 2 per hour — randomized timing prevents bot detection
-  instagram: 4,
-  linkedin: 2,   // 2 per hour
-  facebook: 3,
+  x: 2,          // max 2 per hour even if daily allows more
+  instagram: 1,  // 1 per hour Instagram
+  linkedin: 1,   // 1 per hour (daily limit means 1 total anyway)
+  facebook: 1,   // 1 per hour Facebook
   website: 9999,
-  substack: 1,   // 1 newsletter per hour max
+  substack: 1,
 }
 
 // In-memory rate tracking: key = `${platform}:${hourKey}` → count

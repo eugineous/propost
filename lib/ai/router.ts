@@ -62,7 +62,13 @@ async function callProvider(
 
 function buildSystemPrompt(context?: Record<string, unknown>): string | undefined {
   if (!context || Object.keys(context).length === 0) return undefined
-  return `Context: ${JSON.stringify(context)}`
+  // If a full systemPrompt string is provided, use it directly (not JSON-ified)
+  if (typeof context.systemPrompt === 'string' && context.systemPrompt.length > 50) {
+    return context.systemPrompt
+  }
+  // Fallback: compact context for smaller metadata
+  const { systemPrompt: _sp, ...rest } = context
+  return Object.keys(rest).length > 0 ? `Context: ${JSON.stringify(rest)}` : undefined
 }
 
 class AIRouterImpl implements AIRouter {
