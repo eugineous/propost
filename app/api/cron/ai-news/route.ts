@@ -16,6 +16,7 @@ const PLATFORM_COMPANY: Record<Platform, { company: Company; ceo: string }> = {
   facebook: { company: 'pagepower', ceo: 'CHIEF' },
   linkedin: { company: 'linkedelite', ceo: 'NOVA' },
   website: { company: 'webboss', ceo: 'ROOT' },
+  substack: { company: 'substackpro', ceo: 'QUILL' },
 }
 
 const ACTIVE_PLATFORMS: Platform[] = ['x', 'instagram', 'facebook', 'linkedin']

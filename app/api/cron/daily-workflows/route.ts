@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
     // Post at 3 specific EAT hours only: 8AM, 1PM, 7PM
     // This gives human-like spacing and avoids spam detection
     const X_POST_HOURS_EAT = [8, 13, 19]
-    const isXPostHour = X_POST_HOURS_EAT.includes(eatH)
+    const isXPostHour = X_POST_HOURS_EAT.includes(eatHour)
     if (isXPostHour && shouldPostNow(utcHour, utcMinute, utcDay)) {
       await postToX(todayPillar).catch((e) => logInfo(`[x-post] failed: ${e}`))
       ran.push('X_POST')
@@ -191,7 +191,7 @@ export async function POST(req: NextRequest) {
     // ── LinkedIn: 1 post per day ONLY — quality over quantity
     // Best posting time: 8AM-9AM EAT (highest engagement for Kenyan audience)
     // One window only — 8AM EAT = 5AM UTC
-    const isLinkedInHour = eatH === 8 && utcMinute < 10
+    const isLinkedInHour = eatHour === 8 && utcMinute < 10
     if (isLinkedInHour && !ran.includes('LINKEDIN_POST')) {
       await postToLinkedIn(todayPillar).catch((e) => logInfo(`[linkedin-post] failed: ${e}`))
       ran.push('LINKEDIN_POST')

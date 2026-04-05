@@ -1,15 +1,51 @@
 // ORATOR — LinkedElite Tier 3 content creator
-// Generates professional LinkedIn posts aligned with active Content Pillar
+// Writes as Eugine Micah. Draws from real life arcs, Nairobi angles, 60-day calendar.
+// Inspired by Steven Bartlett: Hook → Story → Insight → Provocation
 
 import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
 import { hawk } from '../../hawk/engine'
 import { getPlatformAdapter } from '../../platforms/index'
 import { logAction, logInfo } from '../../logger'
-import { getDb, withRetry } from '../../db/client'
+import { getDb } from '../../db/client'
 import { PLATFORM_PROMPTS } from '../../brand/context'
 import { formatContent } from '../../content/formatter'
+import {
+  EUGINE_BIO,
+  EUGINE_LIFE_ARCS,
+  NAIROBI_ANGLES,
+  HOOK_FORMULAS,
+  CONTENT_PILLARS_DEEP,
+  CONTENT_CALENDAR_60_DAYS,
+  VOICE_PATTERNS,
+} from '../../brand/eugine'
 import type { Task } from '../../types'
+
+// Pick today's calendar slot (day of year mod 60, 1-indexed)
+function getTodayCalendarSlot() {
+  const now = new Date()
+  const start = new Date(now.getUTCFullYear(), 0, 0)
+  const diff = now.getTime() - start.getTime()
+  const dayOfYear = Math.floor(diff / 86400000)
+  const slotIndex = (dayOfYear - 1) % 60
+  return CONTENT_CALENDAR_60_DAYS[slotIndex]
+}
+
+// Get a random life arc for personal storytelling
+function getRandomArc() {
+  return EUGINE_LIFE_ARCS[Math.floor(Math.random() * EUGINE_LIFE_ARCS.length)]
+}
+
+// Pick a hook formula for LinkedIn
+function getHookFormula() {
+  const hooks = HOOK_FORMULAS.linkedin
+  return hooks[Math.floor(Math.random() * hooks.length)]
+}
+
+// Get a random Nairobi angle
+function getNairobiAngle() {
+  return NAIROBI_ANGLES[Math.floor(Math.random() * NAIROBI_ANGLES.length)]
+}
 
 export class ORATOR extends BaseAgent {
   readonly name = 'ORATOR'
@@ -32,36 +68,7 @@ export class ORATOR extends BaseAgent {
 
       if (!content) {
         const pillar = task.contentPillar ?? await this.getActivePillar()
-
-        // Pillar-specific LinkedIn post angles — each gives the AI a specific human angle
-        const PILLAR_ANGLES: Record<string, string> = {
-          ai_news: `Write about a recent AI development and its direct meaning for Kenya/Africa. Start with a bold first-person hook: "I've been watching [X] for [Y] years..." or "Everyone's talking about [topic]. Nobody's asking what it means for Nairobi." 3-4 short paragraphs. End with 1 direct question. 3-4 hashtags.`,
-          youth_empowerment: `Write about getting ahead as a young Kenyan professional — real, specific advice. Start with a moment or observation. 3-4 paragraphs. End with one question. 3-4 hashtags.`,
-          elite_conversations: `Write about wealth, access, or leadership the top 1% in Kenya discusses but most avoid. Bold opening. Confident. 3-4 paragraphs. Provocative question at end. 3-4 hashtags.`,
-          entrepreneurship: `Write about building a media or digital business in Kenya — share a specific lesson or insight from your experience. First-person, specific. 3-4 paragraphs. 3-4 hashtags.`,
-          media_journalism: `Write about the state of media or journalism in Kenya/Africa. Industry insider perspective. What's changing, what's broken. 3-4 paragraphs. 3-4 hashtags.`,
-          personal_story: `Write from your personal journey — from growing up in Western Kenya (Bunyore/Maragoli) to building a media career in Nairobi. One specific moment. Universal lesson. First-person. 3-4 paragraphs. 3-4 hashtags.`,
-          trending_topics: `Write reacting to a major trend in tech, media, or business with the Kenyan angle front and center. Sharp take. 3-4 paragraphs. 3-4 hashtags.`,
-        }
-
-        const angle = PILLAR_ANGLES[pillar] ?? PILLAR_ANGLES.ai_news
-
-        const generated = await aiRouter.route(
-          'generate',
-          `You ARE Eugine Micah writing your own LinkedIn post. AI Builder & TV Host based in Nairobi. Urban News host on StarTimes. Author of "Born Broke, Built Loud." 2,665 followers counting on real content.
-
-WRITE THIS POST: ${angle}
-
-ABSOLUTE RULES — breaking any = discard the whole post:
-1. Start the post immediately with its first word. DO NOT write "Here's a post:", "Here is:", "Below is:", or ANY intro before the post.
-2. Write in first person (I, my, we). Never third person about yourself.
-3. Never use: "game-changer" / "delve into" / "dive into" / "in today's fast-paced world" / "unlock your potential" / "excited to share" / "leverage" / "synergies"
-4. Hashtags use # symbol only. Never "hashtag#". Max 4 hashtags, at the very end.
-5. Em dashes (—) for emphasis. Never plain hyphens (-).
-6. No bold formatting on LinkedIn — write plain text only.`,
-          { systemPrompt: PLATFORM_PROMPTS.linkedin, platform: 'linkedin', contentPillar: pillar }
-        )
-        content = formatContent(generated.content, 'linkedin', pillar).content
+        content = await this.generatePost(pillar)
       }
 
       // 3. Post
@@ -89,31 +96,76 @@ ABSOLUTE RULES — breaking any = discard the whole post:
     }
   }
 
+  private async generatePost(pillar: string): Promise<string> {
+    const calendar = getTodayCalendarSlot()
+    const hook = getHookFormula()
+    const nairobiAngle = getNairobiAngle()
+    const pillarData = CONTENT_PILLARS_DEEP[pillar as keyof typeof CONTENT_PILLARS_DEEP]
+    const arc = getRandomArc()
+
+    // Build the specific angle — use calendar slot if pillar matches, else use pillar angles
+    const calendarAngle = calendar.pillar === pillar
+      ? calendar.angle
+      : (pillarData?.angles?.[0] ?? calendar.angle)
+
+    // For personal story pillar, include the actual arc to draw from
+    const storyContext = pillar === 'personal_story'
+      ? `\n\nSTORY ARC TO DRAW FROM:\nHook: "${arc.hook}"\nStory: "${arc.story}"\nLesson: "${arc.lesson}"`
+      : ''
+
+    const prompt = `${EUGINE_BIO}
+
+TODAY'S ANGLE: ${calendarAngle}
+
+PILLAR RULE: ${pillarData?.rule ?? 'Write from direct personal experience with Kenyan context.'}
+
+HOOK FORMULA TO USE (adapt it, don't copy verbatim):
+"${hook}"
+
+NAIROBI GROUNDING: Weave in this relatable angle if it fits: "${nairobiAngle}"
+${storyContext}
+
+WRITE A LINKEDIN POST using the Steven Bartlett formula:
+1. HOOK (1-2 lines) — Stop the scroll. Use the hook formula above, adapted naturally.
+2. PERSONAL STORY (2-3 short paragraphs) — Real, specific, Kenyan. The kind of story you'd tell at a dinner table.
+3. UNIVERSAL LESSON — What does this mean for anyone reading this in Nairobi/Africa?
+4. PROVOCATION or QUESTION — Something that makes them think or want to respond.
+5. 3-4 HASHTAGS at the very end using # symbol.
+
+LENGTH: 400-800 characters. Short paragraphs. White space between sections.
+
+ABSOLUTE RULES — break any of these and the post is trash:
+1. OUTPUT ONLY THE POST. First word of your output = first word of the post. No "Here's a post:", no intro, no explanation.
+2. First person (I, my, we). Never third person about yourself. Never "Eugine Micah" in the post.
+3. NEVER use: ${VOICE_PATTERNS.forbidden.join(' / ')}
+4. Hashtags: # symbol only. Never "hashtag#". Max 4 hashtags. At the very end only.
+5. Em dashes (—) for emphasis. Never plain hyphens.
+6. No bold (**text**) — LinkedIn renders this poorly and looks AI-generated.
+7. No bullet points with asterisks or dashes. Write in paragraphs.
+8. Never mention being an AI, a bot, an agent, or ORATOR.`
+
+    const generated = await aiRouter.route(
+      'generate',
+      prompt,
+      { systemPrompt: PLATFORM_PROMPTS.linkedin, platform: 'linkedin', contentPillar: pillar }
+    )
+
+    const cleaned = formatContent(generated.content, 'linkedin', pillar).content
+    logInfo(`[ORATOR] Generated LinkedIn post for pillar: ${pillar}, angle: ${calendarAngle.slice(0, 50)}`)
+    return cleaned
+  }
+
   private async getActivePillar(): Promise<string> {
     try {
       const db = getDb()
       const rows = await db`
         SELECT slug FROM content_pillars WHERE active = true ORDER BY created_at ASC LIMIT 1
       `
-      return (rows as Array<{ slug: string }>)[0]?.slug ?? 'entrepreneurship'
+      return (rows as Array<{ slug: string }>)[0]?.slug ?? 'personal_story'
     } catch {
-      return 'entrepreneurship'
+      // Default to today's calendar pillar
+      return getTodayCalendarSlot().pillar
     }
-  }
-
-  private async submitToApprovalQueue(task: Task, content: string): Promise<void> {
-    await withRetry(async () => {
-      const db = getDb()
-      await db`
-        INSERT INTO approval_queue (
-          task_id, action_type, platform, agent_name,
-          content, content_preview, risk_level, risk_score, status
-        ) VALUES (
-          ${task.id}, 'post', 'linkedin', ${this.name},
-          ${content}, ${content.slice(0, 100)}, 'low', 15, 'pending'
-        )
-      `
-    })
   }
 }
 

@@ -19,6 +19,7 @@ export const REQUIRED_ENV: Record<Platform, string[]> = {
   facebook: ['FACEBOOK_PAGE_ACCESS_TOKEN', 'FACEBOOK_PAGE_ID'],
   linkedin: ['LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_PERSON_URN'],
   website: ['VERCEL_DEPLOY_HOOK_URL'],
+  substack: ['SUBSTACK_PASSWORD', 'SUBSTACK_PUBLICATION_URL'],
 }
 
 const AI_ENV = {

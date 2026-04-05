@@ -114,6 +114,7 @@ export async function runAINewsPost(): Promise<WorkflowResult> {
     facebook: { company: 'pagepower', ceo: 'CHIEF' },
     linkedin: { company: 'linkedelite', ceo: 'NOVA' },
     website: { company: 'webboss', ceo: 'ROOT' },
+    substack: { company: 'substackpro', ceo: 'QUILL' },
   }
 
   try {

@@ -1,6 +1,6 @@
 // BLAZE — XForce Tier 3 post executor
-// Handles X posts and threads with HAWK rate limiting
-// Writes in Eugine Micah's voice — sharp, culturally grounded, authority-driven
+// Handles X posts and threads. Writes as Eugine Micah — sharp, Nairobi-grounded.
+// Makes every post feel like it came from a real person who lives in this city.
 
 import { BaseAgent, type TaskResult } from '../base'
 import { aiRouter } from '../../ai/router'
@@ -9,6 +9,15 @@ import { getPlatformAdapter } from '../../platforms/index'
 import { postViaMake } from '../../make/client'
 import { logAction, logInfo, logError } from '../../logger'
 import { PLATFORM_PROMPTS } from '../../brand/context'
+import { formatContent } from '../../content/formatter'
+import {
+  EUGINE_BIO,
+  EUGINE_LIFE_ARCS,
+  NAIROBI_ANGLES,
+  HOOK_FORMULAS,
+  CONTENT_PILLARS_DEEP,
+  VOICE_PATTERNS,
+} from '../../brand/eugine'
 import { PlatformAPIError } from '../../errors'
 import type { Task } from '../../types'
 
@@ -18,18 +27,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-// Pillar-specific X post prompts — each gets a direct, human take
-const PILLAR_PROMPTS: Record<string, string> = {
-  ai_news: `Write ONE X post about an AI news development. Under 230 characters. Lead with the Kenyan/Nairobi angle or implication. End with a sharp question or statement. First person. No preamble.`,
-  trending_topics: `Write ONE X post reacting to something trending. Under 200 characters. Take a clear position — no hedging. First person. Nairobi lens.`,
-  elite_conversations: `Write ONE X post about wealth, power, or access. Under 230 characters. Something sharp and quotable. The take most people won't say out loud.`,
-  youth_empowerment: `Write ONE X post for young Kenyans grinding. Under 220 characters. Real and specific — no generic motivation. First person.`,
-  kenyan_entertainment: `Write ONE X post commentary on Kenyan music, TV, or celebrity. Under 220 characters. Commentary not reporting. Give the take nobody else is giving.`,
-  personal_story: `Write ONE X post from a personal moment or lesson. Under 220 characters. Specific. Vulnerable if needed. Universal truth.`,
-  entrepreneurship: `Write ONE X post about building or monetizing in Kenya. Under 230 characters. Real, specific, earned insight.`,
-  culture_identity: `Write ONE X post about Nairobi life or Kenyan identity. Under 220 characters. Culturally grounded. Sharp observation.`,
-  media_journalism: `Write ONE X post about media or journalism in Africa. Under 220 characters. Industry insider perspective.`,
-  fashion: `Write ONE X post about style, fashion, or personal brand. Under 200 characters. Nairobi aesthetic. Style as power.`,
+function getRandomArc() {
+  return EUGINE_LIFE_ARCS[Math.floor(Math.random() * EUGINE_LIFE_ARCS.length)]
+}
+
+function getXHook() {
+  const hooks = HOOK_FORMULAS.x
+  return hooks[Math.floor(Math.random() * hooks.length)]
+}
+
+function getNairobiAngle() {
+  return NAIROBI_ANGLES[Math.floor(Math.random() * NAIROBI_ANGLES.length)]
 }
 
 export class BLAZE extends BaseAgent {
@@ -55,33 +63,16 @@ export class BLAZE extends BaseAgent {
       let content: string = (taskData?.content as string) ?? ''
 
       if (!content) {
-        const pillar = task.contentPillar ?? 'ai_news'
-        const pillarAngle = PILLAR_PROMPTS[pillar] ?? PILLAR_PROMPTS.ai_news
-        const generated = await aiRouter.route(
-          'generate',
-          `You ARE Eugine Micah posting on X/Twitter. AI Builder & TV Host in Nairobi, Kenya. Sharp takes, cultural authority, Kenyan angle.
-
-TASK: ${pillarAngle}
-
-ABSOLUTE RULES:
-1. Output ONLY the tweet text. Nothing else. No "Here's a tweet:", no quotes around it, no explanation.
-2. First person always. Under 260 characters.
-3. No hashtags OR max 1 if truly necessary.
-4. Em dashes (—) not hyphens. No exclamation marks.
-5. Never use: game-changer / delve / dive into / unlock / in today's world`,
-          { systemPrompt: PLATFORM_PROMPTS.x, platform: 'x', contentPillar: pillar }
-        )
-        content = generated.content.trim().replace(/^["']|["']$/g, '') // strip surrounding quotes if any
+        const pillar = task.contentPillar ?? 'nairobi_life'
+        content = await this.generateTweet(pillar)
       }
 
-      const xAdapter = getPlatformAdapter('x')
-
-      // 4. Handle thread vs single post
+      // 3. Handle thread vs single post
       if (task.type === 'thread_publish') {
         return await this.publishThread(task, content)
       }
 
-      // 5. Try Make.com first (free, no API credits needed)
+      // 4. Try Make.com first (free, no API credits needed)
       const makeResult = await postViaMake({
         platform: 'x',
         content: content.slice(0, 280),
@@ -106,8 +97,9 @@ ABSOLUTE RULES:
         return { success: true, data: { method: 'make_webhook' } }
       }
 
-      // 6. Fall back to direct X API
+      // 5. Fall back to direct X API
       logInfo(`[BLAZE] Make.com not available (${makeResult.error}), trying direct X API`)
+      const xAdapter = getPlatformAdapter('x')
       const result = await xAdapter.post({ text: content.slice(0, 280) })
 
       await logAction({
@@ -127,7 +119,6 @@ ABSOLUTE RULES:
 
       return { success: true, platformPostId: result.postId, data: { postId: result.postId, url: result.url } }
     } catch (err) {
-      // 402 CreditsDepleted — X API requires paid plan. Log clearly and fail gracefully.
       if (err instanceof PlatformAPIError && err.statusCode === 402) {
         logError(`[BLAZE] X API credits depleted (402). Activate Make.com X scenario to post for free.`, err)
         await logAction({
@@ -157,8 +148,50 @@ ABSOLUTE RULES:
     }
   }
 
+  private async generateTweet(pillar: string): Promise<string> {
+    const arc = getRandomArc()
+    const hookFormula = getXHook()
+    const nairobiAngle = getNairobiAngle()
+    const pillarData = CONTENT_PILLARS_DEEP[pillar as keyof typeof CONTENT_PILLARS_DEEP]
+
+    // Vary format — sometimes life story hook, sometimes hot take, sometimes question
+    const minute = new Date().getUTCMinutes()
+    const formats = [
+      `Write a sharp X post from this real moment: "${arc.hook}" — Lesson: "${arc.lesson}". Under 220 chars. First person. No preamble.`,
+      `Write an X hot take about this Nairobi/Kenya angle: "${nairobiAngle}". Under 220 chars. Polarizing but true. First person.`,
+      `Write an X post using this hook formula (adapt naturally): "${hookFormula}". Topic: ${pillarData?.angles?.[0] ?? nairobiAngle}. Under 220 chars.`,
+      `Write an X post reacting to Nairobi life. Observation: "${nairobiAngle}". End with a question that demands a response. Under 230 chars.`,
+    ]
+    const formatPrompt = formats[minute % formats.length]
+
+    const prompt = `${EUGINE_BIO}
+
+TASK: ${formatPrompt}
+
+ABSOLUTE RULES:
+1. OUTPUT ONLY THE TWEET TEXT. Zero intro. Zero explanation. Zero quotes around it.
+2. First person always. Under 260 characters total.
+3. 0 hashtags preferred. 1 max if truly necessary.
+4. Em dashes (—) not hyphens. No exclamation marks.
+5. NEVER use: ${VOICE_PATTERNS.forbidden.slice(0, 10).join(' / ')}
+6. Never mention being AI, a bot, or an agent.
+7. Sound like a real person who lives in Nairobi, not a content bot.`
+
+    const generated = await aiRouter.route(
+      'generate',
+      prompt,
+      { systemPrompt: PLATFORM_PROMPTS.x, platform: 'x', contentPillar: pillar }
+    )
+
+    const cleaned = formatContent(generated.content, 'x', pillar).content
+      .trim()
+      .replace(/^["']|["']$/g, '') // strip surrounding quotes if any
+
+    logInfo(`[BLAZE] Generated X post for pillar: ${pillar}`)
+    return cleaned
+  }
+
   private async publishThread(task: Task, content: string): Promise<TaskResult> {
-    // Split content into thread parts (each ≤ 280 chars)
     const parts = this.splitIntoThreadParts(content)
     const xAdapter = getPlatformAdapter('x')
     const postIds: string[] = []
@@ -192,7 +225,7 @@ ABSOLUTE RULES:
   }
 
   private splitIntoThreadParts(content: string): string[] {
-    const MAX = 270 // leave room for numbering
+    const MAX = 270
     if (content.length <= 280) return [content]
 
     const sentences = content.split(/(?<=[.!?])\s+/)

@@ -17,6 +17,7 @@ const CONSTRAINTS: Record<Platform, { maxLength?: number; minLength?: number; re
   linkedin: { minLength: 150 },
   facebook: {},
   website: {},
+  substack: { minLength: 200 },
 }
 
 // Instagram hashtag blocks by pillar
