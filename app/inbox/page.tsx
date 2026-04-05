@@ -63,15 +63,28 @@ export default function InboxPage() {
     fetchItems()
   }
 
+  const rejectAll = async () => {
+    if (!confirm(`Reject all ${items.length} pending items?`)) return
+    await fetch('/api/approval-queue/reject-all', { method: 'POST' })
+    fetchItems()
+  }
+
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
       <div className="flex items-center gap-4 mb-6">
         <Link href="/" className="text-gray-500 hover:text-gray-300 text-sm">← Empire</Link>
         <h1 className="text-lg font-bold text-white">Approval Inbox</h1>
         <span className="ml-2 px-2 py-0.5 bg-yellow-900 text-yellow-400 rounded text-xs font-bold">{items.length} pending</span>
-        <button onClick={fetchItems} className="ml-auto px-3 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-700">
-          Refresh
-        </button>
+        <div className="ml-auto flex gap-2">
+          {items.length > 0 && (
+            <button onClick={rejectAll} className="px-3 py-1 bg-red-900 border border-red-800 rounded text-xs text-red-400 hover:bg-red-800">
+              Reject All
+            </button>
+          )}
+          <button onClick={fetchItems} className="px-3 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-gray-300 hover:bg-gray-700">
+            Refresh
+          </button>
+        </div>
       </div>
 
       {loading ? (

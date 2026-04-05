@@ -27,9 +27,6 @@ import {
 import { getEATHour, getTodaysPillar } from '@/lib/brand/context'
 import { taskOrchestrator } from '@/lib/tasks/orchestrator'
 import { getBestTopic } from '@/lib/content/ai-news-source'
-import { aiRouter } from '@/lib/ai/router'
-import { PLATFORM_PROMPTS, AI_NEWS_FORMULAS } from '@/lib/brand/context'
-import { formatContent } from '@/lib/content/formatter'
 import type { ContentPillar } from '@/lib/types'
 
 // ─── Randomized posting schedule ─────────────────────────────────────────────
@@ -59,82 +56,33 @@ function shouldPostNow(utcHour: number, utcMinute: number, utcDay: number): bool
 }
 
 // ─── X post generator ─────────────────────────────────────────────────────────
+// No content pre-generation here — BLAZE uses the knowledge base to generate
 
 async function postToX(pillar: string): Promise<void> {
-  const topic = await getBestTopic()
-  const formula = AI_NEWS_FORMULAS.x
-
-  // Vary the format — sometimes hot take, sometimes thread hook, sometimes question
-  const formats = [
-    `Write a sharp X hot take about: ${topic.headline}. Under 200 chars. Polarizing but not toxic. Kenyan angle.`,
-    `Write an X thread hook about: ${topic.headline}. First tweet only, under 240 chars. Make them want to read more.`,
-    `Write an X post about: ${topic.headline}. Under 280 chars. End with a question that demands a response.`,
-    `Write a reactive X post about AI news: ${topic.headline}. Under 200 chars. "Nobody is talking about this in Nairobi..."`,
-  ]
-  const formatPrompt = formats[new Date().getUTCMinutes() % formats.length]
-
-  const generated = await aiRouter.route(
-    'generate',
-    `${formatPrompt}
-    
-    Summary: ${topic.summary}
-    
-    Voice: Eugine Micah — sharp, culturally grounded, authority-driven.
-    MANDATORY: Add Kenyan/African angle. No AI filler. Em dashes (—) not hyphens.`,
-    { platform: 'x', systemPrompt: PLATFORM_PROMPTS.x, pillar }
-  )
-
-  const formatted = formatContent(generated.content, 'x', 'ai_news')
   await taskOrchestrator.createTask({
     type: 'post_content',
     company: 'xforce',
     platform: 'x',
-    contentPillar: 'ai_news',
+    contentPillar: pillar as ContentPillar,
     priority: 1,
     assignedAgent: 'BLAZE',
-    content: formatted.content,
   })
-
-  logInfo(`[x-post] Queued: ${formatted.content.slice(0, 60)}...`)
+  logInfo(`[x-post] Task queued for BLAZE — pillar: ${pillar}`)
 }
 
 // ─── LinkedIn post generator ──────────────────────────────────────────────────
+// No content pre-generation here — ORATOR uses the knowledge base to generate
 
 async function postToLinkedIn(pillar: string): Promise<void> {
-  const topic = await getBestTopic()
-
-  // Vary LinkedIn formats — sometimes analysis, sometimes list, sometimes story
-  const formats = [
-    `Write a LinkedIn post about: ${topic.headline}. Hook + 3-4 paragraph breakdown + Kenyan angle + CTA. 800-1200 chars.`,
-    `Write a LinkedIn numbered list post about AI: ${topic.headline}. "X things about [topic] that Kenyan professionals need to know". 5-7 points.`,
-    `Write a LinkedIn thought leadership post about: ${topic.headline}. Start with a bold claim. Build the argument. End with a question.`,
-  ]
-  const formatPrompt = formats[new Date().getUTCMinutes() % formats.length]
-
-  const generated = await aiRouter.route(
-    'generate',
-    `${formatPrompt}
-    
-    Summary: ${topic.summary}
-    
-    Voice: Eugine Micah — professional authority, thought leader, media entrepreneur.
-    Audience: Kenyan media professionals, entrepreneurs, brand managers (26-45).
-    No AI filler. Em dashes (—) not hyphens. 3-5 hashtags at end.`,
-    { platform: 'linkedin', systemPrompt: PLATFORM_PROMPTS.linkedin, pillar }
-  )
-
-  const formatted = formatContent(generated.content, 'linkedin', 'ai_news')
   await taskOrchestrator.createTask({
     type: 'post_content',
     company: 'linkedelite',
     platform: 'linkedin',
-    contentPillar: 'ai_news',
+    contentPillar: pillar as ContentPillar,
     priority: 1,
-    assignedAgent: 'NOVA',
-    content: formatted.content,
+    assignedAgent: 'ORATOR',
   })
-
-  logInfo(`[linkedin-post] Queued: ${formatted.content.slice(0, 60)}...`)
+  logInfo(`[linkedin-post] Task queued for ORATOR — pillar: ${pillar}`)
 }
 
 // ─── Substack newsletter scheduler ───────────────────────────────────────────
