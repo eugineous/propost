@@ -8,6 +8,7 @@ interface AgentStatus {
   status: string
   last_heartbeat?: string
   currentTask?: string
+  company?: string
 }
 
 interface PlatformConn {
@@ -78,7 +79,7 @@ export default function MonitorPage() {
   }, [])
 
   const displayed = companyFilter
-    ? filtered.filter((a) => a.name.toLowerCase().includes(companyFilter.toLowerCase()))
+    ? filtered.filter((a) => a.company?.toLowerCase() === companyFilter.toLowerCase())
     : filtered
 
   return (
@@ -110,6 +111,9 @@ export default function MonitorPage() {
                     <div className="flex items-center gap-3">
                       <div className={`w-2 h-2 rounded-full ${STATUS_DOT[agent.status] ?? 'bg-gray-600'} ${agent.status === 'active' ? 'animate-pulse' : ''}`} />
                       <span className="text-sm font-bold text-gray-200">{agent.name}</span>
+                      {agent.company && (
+                        <span className="text-xs text-gray-600">{agent.company}</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-4">
                       {agent.currentTask && (
